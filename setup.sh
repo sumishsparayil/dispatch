@@ -1,144 +1,141 @@
 #!/bin/bash
 # =============================================================================
-# Dispatch — One-Line Setup Installer
+# Dispatch — One-Line Setup
 # KLM Axiva Finvest — MIS Email Dispatch System
-# Usage: curl -sSL <raw-url> | bash
+# =============================================================================
+# Usage: curl -sSL https://raw.githubusercontent.com/sumishsparayil/dispatch/main/setup.sh | bash
+#
+# Options (env vars):
+#   DISPATCH_DIR=~/Dispatch    # install location
+#   DISPATCH_PORT=5000         # port
 # =============================================================================
 set -e
 
 INSTALL_DIR="${DISPATCH_DIR:-$HOME/Dispatch}"
 PORT="${DISPATCH_PORT:-5000}"
-PYTHON_CMD=""
-REPO_URL="https://github.com/sumishsparayil/dispatch.git"
+REPO="https://github.com/sumishsparayil/dispatch.git"
 
-# ── Colours ──────────────────────────────────────────────────────────────────
-BOLD="\033[1m"; GREEN="\033[92m"; RED="\033[91m"; CYAN="\033[96m"; RESET="\033[0m"; DIM="\033[2m"
+BOLD="\033[1m"; CYAN="\033[96m"; GREEN="\033[92m"; RED="\033[91m"; YELLOW="\033[93m"; RESET="\033[0m"
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
 log()  { echo -e "  ${CYAN}[INFO]${RESET} $1"; }
-ok()  { echo -e "  ${GREEN}[OK]${RESET} $1"; }
-err() { echo -e "  ${RED}[ERR]${RESET} $1"; }
+ok()   { echo -e "  ${GREEN}[✓]${RESET}   $1"; }
+err()  { echo -e "  ${RED}[✗]${RESET}   $1"; }
+warn() { echo -e "  ${YELLOW}[!]${RESET}  $1"; }
 
-# ── Banner ───────────────────────────────────────────────────────────────────
 echo -e "${BOLD}${CYAN}"
-echo "  ██████╗ ██████╗ ███████╗██████╗  ██████╗ ███╗   ███╗███████╗"
-echo "  ██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔═══██╗████╗ ████║██╔════╝"
-echo "  ██████╔╝██████╔╝███████╗██████╔╝██║   ██║██╔████╔██║█████╗  "
-echo "  ██╔═══╝ ██╔══██╗╚════██║██╔═══╝ ██║   ██║██║╚██╔╝██║██╔══╝  "
-echo "  ██║     ██║  ██║███████║██║     ╚██████╔╝██║ ╚═╝ ██║███████╗"
-echo "  ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝      ╚═════╝ ╚═╝     ╚═╝╚══════╝"
+echo "   ██████╗ ██████╗ ███████╗██████╗  ██████╗ ███╗   ███╗███████╗"
+echo "   ██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔═══██╗████╗ ████║██╔════╝"
+echo "   ██████╔╝██████╔╝███████╗██████╔╝██║   ██║██╔████╔██║█████╗  "
+echo "   ██╔═══╝ ██╔══██╗╚════██║██╔═══╝ ██║   ██║██║╚██╔╝██║██╔══╝  "
+echo "   ██║     ██║  ██║███████║██║     ╚██████╔╝██║ ╚═╝ ██║███████╗"
+echo "   ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝      ╚═════╝ ╚═╝     ╚═╝╚══════╝"
 echo -e "${RESET}"
-echo -e "${BOLD}    KLM Axiva Finvest — MIS Email Dispatch System${RESET}"
-echo -e "${DIM}                         v1.0.0${RESET}"
+echo -e "  ${BOLD}KLM Axiva Finvest — MIS Email Dispatch System${RESET}"
+echo -e "  ${CYAN}https://github.com/sumishsparayil/dispatch${RESET}"
 echo ""
 
-# ── Detect Python ─────────────────────────────────────────────────────────────
-log "Detecting Python 3.8+..."
-for cmd in python3 python python3.12 python3.11 python3.10 python3.9 python3.8; do
+# ── Python detection ───────────────────────────────────────────────────────────
+PYTHON_CMD=""; PYTHON_VER=""
+for cmd in python3 python3.12 python3.11 python3.10 python3.9 python3.8 python; do
     if command -v $cmd &>/dev/null 2>&1; then
         VER=$($cmd -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)
-        if [ -n "$VER" ]; then
-            MAJOR=$(echo $VER | cut -d. -f1)
-            MINOR=$(echo $VER | cut -d. -f2)
-            if [ "$MAJOR" -eq 3 ] && [ "$MINOR" -ge 8 ]; then
-                PYTHON_CMD=$cmd
-                PYTHON_VER=$VER
-                break
-            fi
-        fi
+        [ -n "$VER" ] && [ ${VER%%.*} -eq 3 ] && [ ${VER#*.} -ge 8 ] && PYTHON_CMD=$cmd && PYTHON_VER=$VER && break
     fi
 done
 
 if [ -z "$PYTHON_CMD" ]; then
-    err "Python 3.8+ not found. Install Python 3.8+ first:"
-    echo "  Ubuntu/Debian:  sudo apt install python3 python3-venv python3-pip"
-    echo "  Fedora/RHEL:    sudo dnf install python3 python3-pip"
+    err "Python 3.8+ not found."
+    echo "  Install Python 3.8+ first:"
+    echo "    Ubuntu/Debian:  sudo apt install python3 python3-venv python3-pip"
+    echo "    Fedora/RHEL:    sudo dnf install python3 python3-pip"
+    echo "    Arch:           sudo pacman -S python python-pip"
     exit 1
 fi
-ok "Python $PYTHON_VER found"
+ok "Python $PYTHON_VER — $PYTHON_CMD"
 
-# ── Detect pip ────────────────────────────────────────────────────────────────
-PIP="$PYTHON_CMD -m pip"
-if ! $PIP --version &>/dev/null 2>&1; then
+# ── pip check ──────────────────────────────────────────────────────────────────
+if ! $PYTHON_CMD -m pip --version &>/dev/null 2>&1; then
     err "pip not found. Install python3-pip for your OS."
     exit 1
 fi
 ok "pip available"
 
-# ── Create install dir ────────────────────────────────────────────────────────
-log "Creating install directory: $INSTALL_DIR"
-mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
+# ── git check ──────────────────────────────────────────────────────────────────
+if ! command -v git &>/dev/null; then
+    err "git not found. Install git: sudo apt install git"
+    exit 1
+fi
+ok "git available"
 
-# ── Clone repo ────────────────────────────────────────────────────────────────
+# ── Detect real home ───────────────────────────────────────────────────────────
+REAL_HOME="$HOME"
+[ -n "$SUDO_USER" ] && REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+
+# ── Resolve install dir ──────────────────────────────────────────────────────
+INSTALL_DIR="${INSTALL_DIR/#\~/$REAL_HOME}"
+[ -d "$INSTALL_DIR" ] || mkdir -p "$INSTALL_DIR"
+
+# ── Clone or update repo ───────────────────────────────────────────────────────
+cd "$INSTALL_DIR"
 if [ -d ".git" ]; then
-    log "Repo already present — pulling latest..."
-    git pull origin main 2>/dev/null || true
+    log "Repo present — pulling latest..."
+    git pull origin main 2>/dev/null || warn "Could not pull — continuing with existing files"
 else
-    log "Cloning Dispatch repository..."
-    if ! command -v git &>/dev/null; then
-        err "git not found. Install git first: sudo apt install git"
-        exit 1
-    fi
-    git clone --depth=1 "$REPO_URL" . 2>/dev/null || {
-        err "Failed to clone. Check internet connection."
+    log "Cloning Dispatch from GitHub..."
+    rm -rf "$INSTALL_DIR"/*
+    git clone --depth=1 "$REPO" . 2>/dev/null || {
+        err "Clone failed. Check internet connection."
         exit 1
     }
 fi
+ok "Repository ready"
 
-# ── Create venv ───────────────────────────────────────────────────────────────
-log "Creating Python virtual environment..."
-if [ -d ".venv" ]; then
-    ok "Virtual environment already exists"
-else
-    $PYTHON_CMD -m venv .venv
-    ok "Virtual environment created"
+# ── Python venv ────────────────────────────────────────────────────────────────
+log "Setting up Python virtual environment..."
+if [ ! -d ".venv" ]; then
+    $PYTHON_CMD -m venv .venv 2>/dev/null || {
+        err "Failed to create virtual environment."
+        exit 1
+    }
 fi
+ok "Virtual environment ready"
 
-# ── Install dependencies ───────────────────────────────────────────────────────
-log "Installing Python dependencies..."
-PIP_BIN="$INSTALL_DIR/.venv/bin/pip"
-$PIP_BIN install --upgrade pip -q 2>/dev/null
-$PIP_BIN install -r requirements-windows.txt -q 2>&1 | tail -3
+# ── Install dependencies ─────────────────────────────────────────────────────
+PIP="$INSTALL_DIR/.venv/bin/pip"
+log "Installing Python packages..."
+$PIP install --upgrade pip -q 2>/dev/null
+INSTALL_LOG=$($PIP install -r requirements.txt 2>&1) || true
+$PIP show flask &>/dev/null && ok "Python packages installed" || {
+    warn "Some packages may have issues. Run manually to check:"
+    echo "  cd $INSTALL_DIR && .venv/bin/pip install -r requirements.txt"
+}
 
-if $PIP_BIN show flask &>/dev/null; then
-    ok "Python packages installed"
-else
-    err "Package installation may have failed. Run manually:"
-    echo "  cd $INSTALL_DIR && .venv/bin/pip install -r requirements-windows.txt"
-fi
-
-# ── Create start scripts ──────────────────────────────────────────────────────
+# ── Launcher scripts ───────────────────────────────────────────────────────────
 cat > "$INSTALL_DIR/start.sh" << 'SCRIPT'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 source .venv/bin/activate
-PORT="${PORT:-5000}"
 exec .venv/bin/python app.py
 SCRIPT
 chmod +x "$INSTALL_DIR/start.sh"
+ok "Created: start.sh"
 
 cat > "$INSTALL_DIR/dispatch.sh" << 'SCRIPT'
 #!/bin/bash
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ./start.sh &>/dev/null &
-echo "Dispatch started on port ${PORT:-5000}"
+echo "Dispatch started."
 SCRIPT
 chmod +x "$INSTALL_DIR/dispatch.sh"
-ok "Launcher scripts created"
+ok "Created: dispatch.sh"
 
-# ── Systemd service ───────────────────────────────────────────────────────────
-REAL_HOME="${HOME:-/root}"
-if [ -n "$SUDO_USER" ]; then
-    REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-fi
-
+# ── Systemd service ────────────────────────────────────────────────────────────
 log "Installing systemd service..."
 mkdir -p "$REAL_HOME/.config/systemd/user"
 cat > "$REAL_HOME/.config/systemd/user/dispatch.service" << EOF
 [Unit]
-Description=Dispatch MIS Email System
+Description=Dispatch MIS Email System — KLM Axiva Finvest
 After=network.target
 
 [Service]
@@ -148,6 +145,12 @@ ExecStart=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/app.py
 Restart=on-failure
 RestartSec=10
 Environment=PORT=$PORT
+StandardOutput=append:$INSTALL_DIR/app.log
+StandardError=append:$INSTALL_DIR/app.log
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$INSTALL_DIR
 
 [Install]
 WantedBy=default.target
@@ -157,22 +160,37 @@ systemctl --user daemon-reload 2>/dev/null || true
 systemctl --user enable dispatch.service 2>/dev/null || true
 ok "Systemd service installed and enabled"
 
-# ── Start the app ─────────────────────────────────────────────────────────────
-log "Starting Dispatch..."
-systemctl --user start dispatch.service 2>/dev/null || {
+# ── Start ─────────────────────────────────────────────────────────────────────
+log "Starting Dispatch on port $PORT..."
+if ! systemctl --user start dispatch.service 2>/dev/null; then
     nohup "$INSTALL_DIR/start.sh" > "$INSTALL_DIR/app.log" 2>&1 &
-}
-sleep 2
+fi
+sleep 3
 
-# ── Done ─────────────────────────────────────────────────────────────────────
-PORT_CHECK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${PORT}/ 2>/dev/null || echo "000")
+# ── Status check ──────────────────────────────────────────────────────────────
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT/ 2>/dev/null || echo "000")
 echo ""
-echo -e "${GREEN}═══════════════════════════════════════════════════════${RESET}"
-echo -e "${GREEN}  ✓  Dispatch is running!${RESET}"
-echo -e "${GREEN}═══════════════════════════════════════════════════════${RESET}"
-echo ""
-echo -e "  ${BOLD}URL:${RESET}       http://localhost:${PORT}"
-echo -e "  ${BOLD}Service:${RESET}   systemctl --user {'start|stop|restart'} dispatch"
-echo -e "  ${BOLD}Log:${RESET}       tail -f $INSTALL_DIR/app.log"
-echo -e "  ${BOLD}Auto-start:${RESET} enabled (survives reboot)"
-echo ""
+if [ "$HTTP_CODE" = "200" ]; then
+    echo -e "${GREEN}══════════════════════════════════════════════════════════${RESET}"
+    echo -e "${GREEN}  ✓  Dispatch is running!${RESET}"
+    echo -e "${GREEN}══════════════════════════════════════════════════════════${RESET}"
+    echo ""
+    echo -e "  ${BOLD}URL:${RESET}        ${CYAN}http://localhost:$PORT${RESET}"
+    echo -e "  ${BOLD}Auto-start:${RESET} ${GREEN}enabled${RESET} — survives reboots"
+    echo ""
+    echo "  Management:"
+    echo "    Start    systemctl --user start dispatch"
+    echo "    Stop     systemctl --user stop dispatch"
+    echo "    Restart  systemctl --user restart dispatch"
+    echo "    Logs     tail -f $INSTALL_DIR/app.log"
+    echo ""
+else
+    echo -e "${YELLOW}══════════════════════════════════════════════════════════${RESET}"
+    echo -e "${YELLOW}  ⚠  Dispatch installed but may still be starting${RESET}"
+    echo -e "${YELLOW}══════════════════════════════════════════════════════════${RESET}"
+    echo ""
+    echo "  Check manually:"
+    echo "    curl http://localhost:$PORT"
+    echo "    tail -f $INSTALL_DIR/app.log"
+    echo ""
+fi
