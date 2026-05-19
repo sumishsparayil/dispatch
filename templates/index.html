@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KLM Axiva — MIS Dispatch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────── -->
+<header class="app-header">
+  <div class="logo">
+    <img src="/static/logo.png" alt="KLM Axiva Finvest" class="logo-img"
+         onerror="this.style.display='none'">
+    <div class="logo-text">
+      <div class="logo-name">KLM AXIVA</div>
+      <div class="logo-sub">MIS Dispatch — KLM Axiva Finvest</div>
+    </div>
+  </div>
+  <nav>
+    <a href="/" class="active">Dashboard</a>
+    <a href="/settings">Settings</a>
+    <a href="/history">History</a>
+  </nav>
+</header>
+
+<!-- ── Main ───────────────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- ── Error Banner ──────────────────────────────────────── -->
+  <div class="error-banner" id="errorBanner">
+    <span class="banner-icon">⚠</span>
+    <div class="banner-content">
+      <strong>Validation Error</strong>
+      <p class="banner-detail" id="errorMsg"></p>
+    </div>
+    <button class="banner-close" onclick="dismissError()">✕</button>
+  </div>
+
+  <!-- ── Success Banner ─────────────────────────────────────── -->
+  <div class="success-banner" id="successBanner">
+    <span>✓</span>
+    <span id="successMsg">All emails sent successfully</span>
+  </div>
+
+  <!-- ── Step Indicator ────────────────────────────────────── -->
+  <div class="step-flow" id="stepFlow">
+    <div class="step-item active" id="step1Item">
+      <div class="step-circle active" id="step1Circle">1</div>
+      <span class="step-label">Drop Data File</span>
+    </div>
+    <div class="step-item" id="step2Item">
+      <div class="step-circle pending" id="step2Circle">2</div>
+      <span class="step-label">Pre-Send Review</span>
+    </div>
+    <div class="step-item" id="step3Item">
+      <div class="step-circle pending" id="step3Circle">3</div>
+      <span class="step-label">Send</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       STEP 1 — DROP DATA FILE
+       ══════════════════════════════════════════════════════════ -->
+  <div id="step1">
+
+    <!-- How it works -->
+    <div class="card">
+      <div class="card-header">
+        <h2><span class="card-icon">📋</span> How KLM Axiva MIS Works</h2>
+        <a href="/api/download-template" class="btn btn-secondary btn-sm" download>
+          ⬇ Download Template
+        </a>
+      </div>
+      <div class="card-body">
+      <div class="steps-guide">
+        <div class="step-guide-item">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h3>Prepare your Excel file</h3>
+            <p>Export loan data into a <strong>Data</strong> sheet. This app reads branch names from the <strong>Branch</strong> column automatically. No Mail List sheet needed.</p>
+          </div>
+        </div>
+        <div class="step-guide-item">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3>Configure email settings</h3>
+            <p>Set up SMTP credentials, email subject/body templates, and branch-to-recipient mappings in the <a href="/settings">Settings</a> tab before your first send.</p>
+          </div>
+        </div>
+        <div class="step-guide-item">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h3>Upload, review, dispatch</h3>
+            <p>Drop your file. Uncheck any branches you want to exclude. Hit <strong>Send All</strong>. Progress and errors are shown in real time.</p>
+          </div>
+        </div>
+      </div>
+      </div><!-- /card-body -->
+    </div>
+
+    <!-- Upload Card -->
+    <div class="card">
+      <div class="card-header">
+        <h2><span class="card-icon">📤</span> Upload Data File</h2>
+        <button class="btn btn-secondary btn-sm" id="clearBtn" style="display:none"
+                onclick="onClearReupload()">✕ Clear / Re-upload</button>
+      </div>
+      <div class="card-body">
+
+      <!-- Drop Zone -->
+      <div class="upload-zone" id="uploadZone"
+           onclick="document.getElementById('fileInput').click()">
+        <input type="file" id="fileInput" accept=".xlsx,.xlsm" style="display:none">
+        <div class="zone-icon">📁</div>
+        <div class="zone-title">Drop your <strong>.xlsx</strong> or <strong>.xlsm</strong> file here</div>
+        <div class="zone-text">or click to browse</div>
+        <div class="zone-hint">Make sure Excel is closed before uploading</div>
+      </div>
+
+      <!-- Staged Parse Progress -->
+      <div id="parseProgress" class="hidden mt-16">
+        <!-- Stage Rail -->
+        <div class="parse-stage-rail">
+          <div class="parse-stage-item" id="ps-file">
+            <div class="ps-circle" id="ps-file-circle">1</div>
+            <div class="ps-label">File</div>
+          </div>
+          <div class="ps-connector"></div>
+          <div class="parse-stage-item" id="ps-sheet">
+            <div class="ps-circle" id="ps-sheet-circle">2</div>
+            <div class="ps-label">Sheet</div>
+          </div>
+          <div class="ps-connector"></div>
+          <div class="parse-stage-item" id="ps-structure">
+            <div class="ps-circle" id="ps-structure-circle">3</div>
+            <div class="ps-label">Structure</div>
+          </div>
+          <div class="ps-connector"></div>
+          <div class="parse-stage-item" id="ps-data">
+            <div class="ps-circle" id="ps-data-circle">4</div>
+            <div class="ps-label">Data</div>
+          </div>
+          <div class="ps-connector"></div>
+          <div class="parse-stage-item" id="ps-branches">
+            <div class="ps-circle" id="ps-branches-circle">5</div>
+            <div class="ps-label">Branches</div>
+          </div>
+          <div class="ps-connector"></div>
+          <div class="parse-stage-item" id="ps-ready">
+            <div class="ps-circle" id="ps-ready-circle">6</div>
+            <div class="ps-label">Ready</div>
+          </div>
+        </div>
+        <!-- Current action text -->
+        <div class="parse-action-text" id="parseActionText">Reading file from disk...</div>
+        <!-- Row count ticker -->
+        <div class="parse-row-ticker" id="parseRowTicker"></div>
+      </div>
+
+      </div><!-- /card-body -->
+    </div>
+
+  </div><!-- /step1 -->
+
+  <!-- ══════════════════════════════════════════════════════════
+       STEP 2 — PRE-SEND REVIEW
+       ══════════════════════════════════════════════════════════ -->
+  <div id="step2" class="hidden">
+
+    <div class="card">
+      <div class="card-header">
+        <h2><span class="card-icon">🔍</span> Pre-Send Review</h2>
+        <div class="flex gap-8 items-center">
+          <span class="badge" id="reviewBadge">—</span>
+          <button class="btn btn-secondary btn-sm" id="startOverBtn"
+                  onclick="onStartOver()">↺ Start Over</button>
+        </div>
+      </div>
+      <div class="card-body">
+
+      <!-- Summary stats -->
+      <div class="preview-stats" id="previewStats"></div>
+
+      <!-- Filter column selector -->
+      <div class="form-group mt-16">
+        <label class="form-label">Branch Column</label>
+        <select class="form-select" id="filterColumnSelect"></select>
+        <span class="form-hint">Column used to group rows per email attachment</span>
+      </div>
+
+      <!-- Branch table with toggles -->
+      <div class="table-meta">
+        <span id="branchTableCount" class="text-sec text-sm">—</span>
+        <label class="flex-vcenter gap-8" style="cursor:pointer;">
+          <input type="checkbox" id="toggleAllBranches" checked
+                 onchange="toggleAllBranches(this.checked)">
+          <span class="text-sm text-sec">Select All</span>
+        </label>
+      </div>
+
+      <div class="table-scroll">
+        <table class="data-table" id="branchTable">
+          <thead>
+            <tr>
+              <th style="width:40px;"><input type="checkbox" id="selectAllCheck"
+                    checked onchange="toggleAllBranches(this.checked)"></th>
+              <th>#</th>
+              <th>Branch Name</th>
+              <th>Recipient Email</th>
+              <th>Rows</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="branchTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Send actions -->
+      <div class="send-actions">
+        <div class="send-info" id="sendInfo">—</div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" id="testSelfBtn"
+                  onclick="startSend(true)">Send Test to First Branch</button>
+          <button class="btn btn-success btn-large" id="sendAllBtn"
+                  onclick="startSend(false)" style="min-width:180px;">
+            ▶ Send All Emails
+          </button>
+        </div>
+      </div>
+
+      </div><!-- /card-body -->
+    </div>
+
+  </div><!-- /step2 -->
+
+  <!-- ══════════════════════════════════════════════════════════
+       STEP 3 — LIVE PROGRESS
+       ══════════════════════════════════════════════════════════ -->
+  <div id="step3" class="hidden">
+
+    <div class="card">
+      <div class="card-header">
+        <h2><span class="card-icon">📡</span> Live Progress</h2>
+        <button class="btn btn-danger btn-sm" id="stopBtn" onclick="stopRun()">■ Stop</button>
+      </div>
+      <div class="card-body">
+
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progressBar" style="width:0%">
+          <span id="progressLabel">0 / 0</span>
+        </div>
+      </div>
+      <div class="progress-meta">
+        <span id="progressBranch">—</span>
+        <span id="progressPct">0%</span>
+      </div>
+
+      <div class="progress-stats">
+        <div class="stat-card total">
+          <div class="stat-num" id="statTotal">0</div>
+          <div class="stat-label">Total</div>
+        </div>
+        <div class="stat-card sent">
+          <div class="stat-num" id="statSent">0</div>
+          <div class="stat-label">Sent ✓</div>
+        </div>
+        <div class="stat-card failed">
+          <div class="stat-num" id="statFailed">0</div>
+          <div class="stat-label">Failed ✗</div>
+        </div>
+      </div>
+
+      <div class="live-log" id="liveLog">
+        <div class="log-entry">
+          <span class="log-ts">—</span>
+          <span class="log-inf">→ Waiting for start...</span>
+        </div>
+      </div>
+
+      </div><!-- /card-body -->
+    </div>
+
+    <!-- Retry Banner -->
+    <div class="card hidden" id="retryBanner"
+         style="border:1px solid var(--err);">
+      <div class="flex-between flex-wrap gap-12">
+        <div>
+          <h2 style="color:var(--err);font-size:15px;">
+            Some emails failed to send
+          </h2>
+          <p class="text-sec text-sm mt-8" id="retrySummary">—</p>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary" onclick="exportLog()">Export Log CSV</button>
+          <button class="btn btn-warning" onclick="retryFailed()">↻ Retry Failed</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /step3 -->
+
+</main>
+
+<script>
+// ── State ──────────────────────────────────────────────────────
+let currentSession = null;
+let parseEventSrc = null;
+let evtSource = null;
+let isRunning = false;
+let currentRunId = null;
+let branchChecked = {};
+let hasActiveSession = false;   // tracks if a file has been uploaded (not just loaded)
+
+// ── Upload ─────────────────────────────────────────────────────
+const zone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) fileInput.files = e.dataTransfer.files;
+  if (fileInput.files.length) uploadFile();
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) uploadFile(); });
+
+async function uploadFile() {
+  const file = fileInput.files[0];
+  if (!file) return;
+  dismissError();
+
+  // Show parse progress, hide upload zone
+  document.getElementById('uploadZone').style.display = 'none';
+  document.getElementById('parseProgress').classList.remove('hidden');
+  hasActiveSession = true;
+
+  // Reset stage indicators
+  resetStageRail();
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showError(data.error || 'Upload failed.');
+      resetUploadUI();
+      return;
+    }
+    startParseProgressSSE();
+  } catch (err) {
+    showError('Upload error: ' + err.message);
+    resetUploadUI();
+  }
+}
+
+// ── Stage rail helpers ─────────────────────────────────────────
+const STAGES = ['file', 'sheet', 'structure', 'data', 'branches', 'ready'];
+
+function resetStageRail() {
+  STAGES.forEach(s => {
+    const circle = document.getElementById(`ps-${s}-circle`);
+    if (circle) {
+      circle.className = 'ps-circle';
+      const idx = STAGES.indexOf(s) + 1;
+      circle.textContent = idx;
+    }
+  });
+}
+
+function activateStage(stage) {
+  const idx = STAGES.indexOf(stage);
+  STAGES.forEach((s, i) => {
+    const item = document.getElementById(`ps-${s}`);
+    const circle = document.getElementById(`ps-${s}-circle`);
+    if (!circle) return;
+    if (i < idx) {
+      // completed
+      circle.className = 'ps-circle ps-done';
+      circle.textContent = '✓';
+    } else if (i === idx) {
+      // active
+      circle.className = 'ps-circle ps-active';
+      circle.textContent = STAGES.indexOf(s) + 1;
+    } else {
+      // pending
+      circle.className = 'ps-circle';
+      circle.textContent = i + 1;
+    }
+  });
+  document.getElementById('parseActionText').textContent = '';
+}
+
+function completeAllStages() {
+  STAGES.forEach(s => {
+    const circle = document.getElementById(`ps-${s}-circle`);
+    if (circle) {
+      circle.className = 'ps-circle ps-done';
+      circle.textContent = '✓';
+    }
+  });
+}
+
+function startParseProgressSSE() {
+  if (parseEventSrc) parseEventSrc.close();
+  parseEventSrc = new EventSource('/api/upload-progress');
+  parseEventSrc.onmessage = e => updateParseProgress(JSON.parse(e.data));
+  parseEventSrc.onerror = () => { parseEventSrc.close(); };
+}
+
+function updateParseProgress(data) {
+  const stage = data.status;
+  const message = data.message || '';
+
+  // Update action text
+  document.getElementById('parseActionText').textContent = message;
+
+  // Activate stage rail
+  const stageMap = {
+    'reading':    'file',
+    'loading':     'sheet',
+    'validating':  'structure',
+    'parsing':     'data',
+    'branches':    'branches',
+    'done':        'ready',
+  };
+
+  const mappedStage = stageMap[stage];
+  if (mappedStage) {
+    activateStage(mappedStage);
+  }
+
+  // Extract row count from parsing message, e.g. "Parsing 12,450 rows..."
+  const rowMatch = message.match(/(\d[\d,]+)\s*rows/);
+  if (rowMatch && stage === 'parsing') {
+    document.getElementById('parseRowTicker').textContent = `Parsing rows... ${rowMatch[1]}`;
+  } else if (stage === 'branches') {
+    // Extract branch + row count from branches stage
+    const m = message.match(/Found\s+(\d+)\s+branches.+?(\d[\d,]+)\s+rows/i);
+    if (m) {
+      document.getElementById('parseRowTicker').textContent = `${m[1]} branches · ${m[2]} rows`;
+    }
+  } else {
+    document.getElementById('parseRowTicker').textContent = '';
+  }
+
+  if (stage === 'done') {
+    parseEventSrc.close();
+    completeAllStages();
+    document.getElementById('parseActionText').textContent = message;
+    document.getElementById('parseRowTicker').textContent = '';
+    // Crossfade to step 2 after short delay
+    setTimeout(() => {
+      document.getElementById('parseProgress').classList.add('hidden');
+      loadSessionAndRender(data.session || null);
+    }, 600);
+  }
+
+  if (stage === 'error') {
+    parseEventSrc.close();
+    showError(message || 'Parse error.');
+    resetUploadUI();
+  }
+}
+
+function resetUploadUI() {
+  hasActiveSession = false;
+  document.getElementById('parseProgress').classList.add('hidden');
+  document.getElementById('uploadZone').style.display = 'block';
+  document.getElementById('clearBtn').style.display = 'none';
+  resetStageRail();
+  fileInput.value = '';
+}
+
+// ── Load session and render Step 2 ─────────────────────────────
+async function loadSessionAndRender(sessionData) {
+  try {
+    const res = await fetch('/api/session');
+    const data = await res.json();
+    if (!data.active && !sessionData) return;
+
+    // Use sessionData from SSE if available (includes full payload)
+    const s = sessionData || data;
+    currentSession = s;
+    branchChecked = {};
+
+    // Show step 2, hide step 1
+    document.getElementById('step1').classList.add('hidden');
+    document.getElementById('step2').classList.remove('hidden');
+    document.getElementById('step3').classList.add('hidden');
+    document.getElementById('clearBtn').style.display = 'inline-flex';
+
+    updateStepIndicator(2);
+
+    // Stats
+    const branches = s.branches || [];
+    document.getElementById('previewStats').innerHTML = `
+      <div class="ps-item">
+        <div class="ps-val">${(s.total_rows || 0).toLocaleString()}</div>
+        <div class="ps-lbl">Total Data Rows</div>
+      </div>
+      <div class="ps-item">
+        <div class="ps-val">${branches.length}</div>
+        <div class="ps-lbl">Unique Branches</div>
+      </div>
+      <div class="ps-item">
+        <div class="ps-val">${(s.filename || '—')}</div>
+        <div class="ps-lbl">File</div>
+      </div>
+    `;
+
+    // Column dropdown
+    const sel = document.getElementById('filterColumnSelect');
+    sel.innerHTML = '';
+    (s.columns || []).forEach(col => {
+      if (col && String(col).trim()) {
+        const opt = document.createElement('option');
+        opt.value = String(col).trim();
+        opt.textContent = String(col).trim();
+        if (String(col).trim() === (s.branch_col || 'Branch')) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    });
+
+    // Get address book for email lookups
+    let emailMap = {};
+    try {
+      const abRes = await fetch('/api/address-book');
+      const ab = await abRes.json();
+      for (const [branch, info] of Object.entries(ab.branches || {})) {
+        if (info.email) emailMap[branch] = info;
+      }
+    } catch (_) {}
+
+    // Get settings for branch_mappings fallback
+    let bm = {};
+    try {
+      const settingsRes = await fetch('/api/settings');
+      const settings = await settingsRes.json();
+      bm = settings.branch_mappings || {};
+    } catch (_) {}
+
+    // Build branch table rows
+    const tbody = document.getElementById('branchTableBody');
+    tbody.innerHTML = '';
+
+    branches.forEach((b, i) => {
+      const abEntry = emailMap[b.branch];
+      const mapping = bm[b.branch] || {};
+      const email = (abEntry && abEntry.email) || mapping.email || '';
+      const cc = (abEntry && abEntry.cc) || mapping.cc || '';
+      const hasEmail = email && email.includes('@');
+      branchChecked[b.branch] = true;
+
+      const statusClass = hasEmail ? 'status-ready' : 'status-warning';
+      const statusTxt = hasEmail ? '● Ready' : '⚠ No email set';
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>
+          <input type="checkbox" class="branch-check"
+                 value="${esc(b.branch)}"
+                 checked
+                 onchange="onBranchToggle('${esc(b.branch)}')">
+        </td>
+        <td class="text-sec text-sm">${i + 1}</td>
+        <td><strong>${esc(b.branch)}</strong></td>
+        <td>
+          <span class="text-sm" style="color:${hasEmail ? 'var(--text)' : 'var(--text-sec)'}">
+            ${esc(email || '— not mapped')}
+          </span>
+        </td>
+        <td class="text-sm">${b.count.toLocaleString()}</td>
+        <td><span class="status-badge ${statusClass}">${statusTxt}</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    updateSendInfo();
+    document.getElementById('reviewBadge').textContent =
+      `${branches.length} branch${branches.length !== 1 ? 'es' : ''} detected`;
+
+  } catch (err) {
+    showError('Failed to load session: ' + err.message);
+  }
+}
+
+// ── Step navigation ────────────────────────────────────────────
+function updateStepIndicator(step) {
+  const labels = ['Drop Data File', 'Pre-Send Review', 'Send'];
+  for (let i = 1; i <= 3; i++) {
+    const item = document.getElementById(`step${i}Item`);
+    const circle = document.getElementById(`step${i}Circle`);
+    item.classList.remove('active', 'done');
+    circle.classList.remove('active', 'done', 'pending');
+    if (i < step) {
+      item.classList.add('done');
+      circle.classList.add('done');
+      circle.textContent = '✓';
+    } else if (i === step) {
+      item.classList.add('active');
+      circle.classList.add('active');
+      circle.textContent = i;
+    } else {
+      circle.classList.add('pending');
+      circle.textContent = i;
+    }
+  }
+}
+
+// ── Branch toggles ──────────────────────────────────────────────
+function esc(str) {
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"');
+}
+
+function onBranchToggle(branch) {
+  const cb = document.querySelector(`.branch-check[value="${esc(branch)}"]`);
+  branchChecked[branch] = cb ? cb.checked : false;
+  const allChecked = Object.values(branchChecked).every(Boolean);
+  document.getElementById('selectAllCheck').checked = allChecked;
+  document.getElementById('toggleAllBranches').checked = allChecked;
+  updateSendInfo();
+}
+
+function toggleAllBranches(checked) {
+  document.querySelectorAll('.branch-check').forEach(cb => {
+    cb.checked = checked;
+    branchChecked[cb.value] = checked;
+  });
+  document.getElementById('selectAllCheck').checked = checked;
+  updateSendInfo();
+}
+
+function updateSendInfo() {
+  const included = Object.values(branchChecked).filter(Boolean).length;
+  const total = Object.keys(branchChecked).length;
+  document.getElementById('branchTableCount').textContent =
+    `${included} of ${total} branches selected`;
+  document.getElementById('sendInfo').textContent =
+    `${included} email${included !== 1 ? 's' : ''} will be sent`;
+}
+
+// ── Send ────────────────────────────────────────────────────────
+async function startSend(isTestOnly) {
+  if (isRunning) return;
+  if (!currentSession) { showError('Please upload a file first.'); return; }
+
+  const included = Object.values(branchChecked).filter(Boolean).length;
+  if (!isTestOnly && included === 0) {
+    showError('All branches are excluded. Select at least one branch to send.');
+    return;
+  }
+
+  isRunning = true;
+  dismissError();
+
+  document.getElementById('step3').classList.remove('hidden');
+  updateStepIndicator(3);
+
+  document.getElementById('statTotal').textContent = isTestOnly ? 1 : included;
+  document.getElementById('statSent').textContent = '0';
+  document.getElementById('statFailed').textContent = '0';
+  document.getElementById('progressBar').style.width = '0%';
+  document.getElementById('progressBar').className = 'progress-bar-fill';
+  document.getElementById('liveLog').innerHTML = '';
+  document.getElementById('retryBanner').classList.add('hidden');
+  document.getElementById('successBanner').classList.remove('active');
+  document.getElementById('sendAllBtn').disabled = true;
+  document.getElementById('testSelfBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+
+  startSSE();
+
+  const excluded = Object.entries(branchChecked)
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+
+  const body = {
+    test_only: isTestOnly,
+    excluded_branches: excluded,
+  };
+
+  const res = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    showError(data.error || 'Run failed to start.');
+    isRunning = false;
+  }
+}
+
+async function retryFailed() { startSend(false); }
+
+// ── SSE Progress ───────────────────────────────────────────────
+function startSSE() {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource('/api/progress');
+
+  evtSource.onmessage = e => {
+    const entry = JSON.parse(e.data);
+    appendLog(entry);
+
+    if (entry.event === 'PROCESSING') {
+      const pct = entry.total
+        ? Math.round((entry.email_num / entry.total) * 100)
+        : 0;
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('progressLabel').textContent =
+        `${entry.email_num} / ${entry.total}`;
+      document.getElementById('progressPct').textContent = pct + '%';
+      document.getElementById('progressBranch').textContent = entry.branch || '—';
+    }
+
+    if (entry.event === 'SENT') {
+      document.getElementById('statSent').textContent =
+        parseInt(document.getElementById('statSent').textContent) + 1;
+    }
+    if (entry.event === 'FAILED') {
+      document.getElementById('statFailed').textContent =
+        parseInt(document.getElementById('statFailed').textContent) + 1;
+    }
+
+    if (entry.event === 'COMPLETE') {
+      evtSource.close();
+      isRunning = false;
+      currentRunId = entry.run_id || null;
+      document.getElementById('sendAllBtn').disabled = false;
+      document.getElementById('testSelfBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+
+      const sent = entry.sent || 0;
+      const failed = entry.failed || 0;
+
+      if (failed === 0) {
+        document.getElementById('successBanner').classList.add('active');
+        document.getElementById('successMsg').textContent =
+          `All ${sent} emails sent successfully — ${new Date().toLocaleTimeString('en-IN', { hour12: false })}`;
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressBar').classList.add('success');
+      } else {
+        document.getElementById('retryBanner').classList.remove('hidden');
+        document.getElementById('retrySummary').textContent =
+          `${sent} sent, ${failed} failed out of ${entry.total} total`;
+        document.getElementById('progressBar').classList.add('error');
+      }
+    }
+  };
+
+  evtSource.onerror = () => { /* silent */ };
+}
+
+function appendLog(entry) {
+  const log = document.getElementById('liveLog');
+  const time = new Date().toLocaleTimeString('en-IN', { hour12: false });
+  let cssClass = 'log-inf', prefix = '→';
+  if (entry.level === 'success') { cssClass = 'log-ok'; prefix = '✓'; }
+  if (entry.level === 'error')   { cssClass = 'log-err'; prefix = '✗'; }
+  if (entry.level === 'warning')  { cssClass = 'log-warn'; prefix = '⚠'; }
+
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML =
+    `<span class="log-ts">${time}</span>` +
+    `<span class="${cssClass}">${prefix} ${esc(entry.message)}</span>`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function stopRun() {
+  await fetch('/api/stop', { method: 'POST' });
+  document.getElementById('stopBtn').disabled = true;
+}
+
+async function exportLog() {
+  if (currentRunId) {
+    window.open('/api/export-log/' + currentRunId, '_blank');
+  } else {
+    window.open('/history', '_blank');
+  }
+}
+
+// ── Clear / Start Over ─────────────────────────────────────────
+function onClearReupload() {
+  if (hasActiveSession) {
+    if (!confirm('Start over? This will clear the current session and return to Step 1. Your address book and settings will be preserved.')) return;
+  }
+  doClearSession();
+}
+
+function onStartOver() {
+  if (!confirm('Start over? This will clear the current session and return to Step 1. Your address book and settings will be preserved.')) return;
+  doClearSession();
+}
+
+async function doClearSession() {
+  currentSession = null;
+  branchChecked = {};
+  hasActiveSession = false;
+
+  if (parseEventSrc) { parseEventSrc.close(); parseEventSrc = null; }
+  if (evtSource) { evtSource.close(); evtSource = null; }
+
+  await fetch('/api/clear', { method: 'POST' });
+
+  // Fade out step 2, fade in step 1
+  const step2 = document.getElementById('step2');
+  const step1 = document.getElementById('step1');
+  step2.style.transition = 'opacity 0.3s';
+  step2.style.opacity = '0';
+  setTimeout(() => {
+    step2.classList.add('hidden');
+    step2.style.opacity = '';
+    step1.classList.remove('hidden');
+  }, 300);
+
+  document.getElementById('step3').classList.add('hidden');
+  document.getElementById('step3').style.opacity = '';
+  document.getElementById('retryBanner').classList.add('hidden');
+  document.getElementById('successBanner').classList.remove('active');
+  document.getElementById('errorBanner').classList.remove('show');
+  document.getElementById('clearBtn').style.display = 'none';
+  document.getElementById('uploadZone').style.display = 'block';
+  fileInput.value = '';
+  resetStageRail();
+  updateStepIndicator(1);
+}
+
+// ── Error / Success banners ────────────────────────────────────
+function showError(msg) {
+  document.getElementById('errorMsg').textContent = msg;
+  document.getElementById('errorBanner').classList.add('show');
+}
+function dismissError() {
+  document.getElementById('errorBanner').classList.remove('show');
+}
+
+// ── Restore session on page load ───────────────────────────────
+async function checkSession() {
+  try {
+    const res = await fetch('/api/session');
+    const data = await res.json();
+    if (data.active) {
+      hasActiveSession = true;
+      document.getElementById('uploadZone').style.display = 'none';
+      document.getElementById('clearBtn').style.display = 'inline-flex';
+      loadSessionAndRender();
+    }
+  } catch (e) { /* ignore */ }
+}
+
+checkSession();
+</script>
+</body>
+</html>

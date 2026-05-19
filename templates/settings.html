@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — KLM Axiva MIS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="logo">
+    <img src="/static/logo.png" alt="KLM Axiva Finvest" class="logo-img"
+         onerror="this.style.display='none'">
+    <div class="logo-text">
+      <div class="logo-name">KLM AXIVA</div>
+      <div class="logo-sub">MIS Dispatch — KLM Axiva Finvest</div>
+    </div>
+  </div>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/settings" class="active">Settings</a>
+    <a href="/history">History</a>
+  </nav>
+</header>
+
+<main class="main">
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SMTP CONFIGURATION
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <h2><span class="card-icon">⚙️</span> SMTP Configuration</h2>
+    </div>
+    <div class="card-body">
+
+      <div class="settings-grid">
+        <div>
+          <div class="form-group">
+            <label class="form-label">SMTP Host</label>
+            <input type="text" class="form-input" id="smtp_host"
+                   placeholder="smtp.klmaxiva.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">SMTP Port</label>
+            <input type="number" class="form-input" id="smtp_port"
+                   placeholder="587" value="587">
+          </div>
+        </div>
+        <div>
+          <div class="form-group">
+            <label class="form-label">Username (Email)</label>
+            <input type="text" class="form-input" id="smtp_user"
+                   placeholder="mis@klmaxiva.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-input" id="smtp_pass"
+                   placeholder="••••••••••">
+            <span class="form-hint">Stored securely via Windows Credential Manager</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Second row of settings -->
+      <div class="settings-grid" style="margin-top:8px;">
+        <div class="form-group">
+          <label class="form-label">From Name</label>
+          <input type="text" class="form-input" id="from_name"
+                 placeholder="MIS - KLM Axiva Finvest">
+        </div>
+        <div class="toggle-row" style="margin-top:20px;">
+          <label class="toggle">
+            <input type="checkbox" id="use_tls" checked>
+            <span class="toggle-slider"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;">Use TLS</div>
+            <div class="form-hint">Enable for port 587 (recommended)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <label class="toggle">
+          <input type="checkbox" id="auto_delete" checked>
+          <span class="toggle-slider"></span>
+        </label>
+        <div>
+          <div style="font-size:13px;font-weight:600;">Auto-delete attachment files after send</div>
+          <div class="form-hint">Keeps the uploads folder clean — recommended: ON</div>
+        </div>
+      </div>
+
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+
+  <!-- ═══════════════════════════════════════════════════════════
+       CONNECTION TEST
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <h2><span class="card-icon">🔗</span> Connection Test</h2>
+    </div>
+    <div class="card-body">
+
+      <div class="form-group">
+        <label class="form-label">Test Recipient Email</label>
+        <input type="text" class="form-input" id="test_recipient"
+               placeholder="your@email.com — used for test sends">
+        <span class="form-hint">Dedicated address for test sends. Defaults to SMTP Username if blank.</span>
+      </div>
+
+      <div class="flex items-center gap-12 mt-4" style="padding-top:4px;">
+        <button class="btn btn-secondary" onclick="testSMTP()">
+          🔗 Test Connection
+        </button>
+        <span id="connBadge" class="smtp-badge testing">Not tested</span>
+      </div>
+
+      <div class="flex items-center gap-12 mt-12">
+        <button class="btn btn-secondary" onclick="sendTestEmail()">
+          📬 Send Test Email
+        </button>
+        <span id="emailBadge" class="smtp-badge testing">—</span>
+      </div>
+
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+
+  <!-- ═══════════════════════════════════════════════════════════
+       EMAIL TEMPLATE
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <h2><span class="card-icon">📧</span> Email Template</h2>
+    </div>
+    <div class="card-body">
+
+      <div class="form-group">
+        <label class="form-label">Email Subject</label>
+        <input type="text" class="form-input" id="email_subject"
+               placeholder="MIS Report — {branch}">
+        <span class="form-hint">
+          Available tags:
+          <code>{branch}</code>
+          <code>{row_count}</code>
+          <code>{total_outstanding}</code>
+          <code>{total_demand_loss}</code>
+          <code>{npa_count}</code>
+          <code>{fresh_od_count}</code>
+          <code>{tenure_completed_count}</code>
+          Any column name from your Excel works too, e.g.
+          <code>{LOAN AMOUNT}</code>
+        </span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Email Body</label>
+        <textarea class="form-textarea" id="email_body" rows="8"
+                  placeholder="Dear Team,&#10;&#10;Please find attached the MIS report for {branch}.&#10;&#10;Summary:&#10;  Total Rows: {row_count}&#10;  Total Outstanding: Rs.{total_outstanding}&#10;&#10;Regards,&#10;MIS Team — KLM Axiva Finvest"></textarea>
+      </div>
+
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">Default CC</label>
+        <input type="text" class="form-input" id="default_cc"
+               placeholder="manager@klmaxiva.com, head@klmaxiva.com">
+        <span class="form-hint">Comma-separated list for the Address Book CC field. Leave blank for no CC. (Note: per-branch CC from Address Book is used; default_cc is not applied automatically.)</span>
+      </div>
+
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ADDRESS BOOK
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <h2><span class="card-icon">📒</span> Address Book</h2>
+    </div>
+    <div class="card-body">
+
+      <!-- Stats bar -->
+      <div class="ab-stats-bar" id="abStatsBar">
+        <span id="abBranchCount">0 branches loaded</span>
+        <span class="ab-dot">·</span>
+        <span id="abMissingCount">0 emails missing</span>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="ab-toolbar">
+        <button class="btn btn-secondary btn-sm" id="abAutoFillBtn"
+                onclick="abAutoFill()" disabled>↺ Auto-fill from Session</button>
+        <button class="btn btn-secondary btn-sm" onclick="abShowAddRow()">+ Add Branch</button>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;">
+          ⬇ Import Excel
+          <input type="file" id="abImportInput" accept=".xlsx" style="display:none"
+                 onchange="abImportFile(this)">
+        </label>
+        <button class="btn btn-secondary btn-sm" onclick="abExport()">⬆ Export</button>
+      </div>
+
+      <!-- Add-row inline form (hidden by default) -->
+      <div class="ab-add-row hidden" id="abAddRow">
+        <input type="text" id="abNewBranch" class="form-input" placeholder="Branch Name" style="width:200px;">
+        <input type="text" id="abNewEmail" class="form-input" placeholder="Email address" style="width:240px;">
+        <input type="text" id="abNewCC" class="form-input" placeholder="CC (optional)" style="width:180px;">
+        <button class="btn btn-primary btn-sm" onclick="abSaveNewRow()">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="abCancelAddRow()">Cancel</button>
+      </div>
+
+      <!-- Table -->
+      <div class="table-scroll" style="margin-top:12px;">
+        <table class="data-table" id="abTable">
+          <thead>
+            <tr>
+              <th>Branch Name</th>
+              <th>Email</th>
+              <th>CC</th>
+              <th style="width:50px;">Act</th>
+            </tr>
+          </thead>
+          <tbody id="abTableBody"></tbody>
+        </table>
+      </div>
+
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+
+  <!-- Address Book is the single authoritative store for branch emails.
+       Managed via the address book card above. -->
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SAVE
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-body">
+      <div class="flex-between flex-wrap gap-12">
+        <div id="saveStatus" class="text-sm" style="display:none;"></div>
+        <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">
+          💾 Save All Settings
+        </button>
+      </div>
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+
+</main>
+
+<script>
+let currentSettings = {};
+
+let addressBook = { branches: {}, default_cc: '' };
+
+// ── Address Book ──────────────────────────────────────────────
+async function loadAddressBook() {
+  try {
+    const res = await fetch('/api/address-book');
+    const data = await res.json();
+    addressBook = data;  renderAddressBook();
+  } catch (err) {
+    console.error('Failed to load address book:', err);
+  }
+}
+
+function renderAddressBook() {
+  const tbody = document.getElementById('abTableBody');
+  tbody.innerHTML = '';
+  const branches = Object.keys(addressBook.branches || {}).sort();
+
+  let missing = 0;
+  branches.forEach(branch => {
+    const info = addressBook.branches[branch] || {};
+    if (!info.email) missing++;
+  });
+
+  document.getElementById('abBranchCount').textContent =
+    `${branches.length} branch${branches.length !== 1 ? 'es' : ''} loaded`;
+  document.getElementById('abMissingCount').textContent =
+    `${missing} email${missing !== 1 ? 's' : ''} missing`;
+  document.getElementById('abMissingCount').style.color =
+    missing > 0 ? 'var(--warn)' : '';
+
+  if (branches.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4">
+          <div class="empty-state" style="padding:28px;">
+            <div class="empty-icon">📒</div>
+            <div class="empty-title">No branches in address book</div>
+            <div class="text-sec text-sm">Use "Auto-fill from Session" or "Import Excel" to add branches.</div>
+          </div>
+        </td>
+      </tr>`;
+    return;
+  }
+
+  branches.forEach(branch => {
+    const info = addressBook.branches[branch] || {};
+    const email = info.email || '';
+    const cc = info.cc || '';
+    const isMissing = !email;
+
+    const tr = document.createElement('tr');
+    tr.className = isMissing ? 'ab-missing-row' : '';
+    tr.innerHTML = `
+      <td><strong>${escHtml(branch)}</strong></td>
+      <td>
+        <span class="ab-cell-text" data-orig="${escHtml(email)}"
+              ondblclick="abEditCell(this, '${escJs(branch)}', 'email')">
+          ${escHtml(email) || '<span style="color:var(--ink-4)">— add email</span>'}
+        </span>
+      </td>
+      <td>
+        <span class="ab-cell-text" data-orig="${escHtml(cc)}"
+              ondblclick="abEditCell(this, '${escJs(branch)}', 'cc')">
+          ${escHtml(cc) || '—'}
+        </span>
+      </td>
+      <td>
+        <button class="mapping-delete" onclick="abDeleteBranch('${escJs(branch)}')" title="Remove">✕</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Enable auto-fill if session is active
+  checkSessionForAutoFill();
+}
+
+async function checkSessionForAutoFill() {
+  try {
+    const res = await fetch('/api/session');
+    const data = await res.json();
+    document.getElementById('abAutoFillBtn').disabled = !data.active;
+  } catch (_) {
+    document.getElementById('abAutoFillBtn').disabled = true;
+  }
+}
+
+async function abAutoFill() {
+  try {
+    const res = await fetch('/api/address-book/fill-from-session', { method: 'POST' });
+    const result = await res.json();
+    if (result.ok) {
+      await loadAddressBook();
+      showToast(`Added ${result.added} branch${result.added !== 1 ? 'es' : ''} from session`);
+    }
+  } catch (err) {
+    showToast('Failed: ' + err.message, true);
+  }
+}
+
+function abShowAddRow() {
+  document.getElementById('abAddRow').classList.remove('hidden');
+  document.getElementById('abNewBranch').focus();
+}
+
+function abCancelAddRow() {
+  document.getElementById('abAddRow').classList.add('hidden');
+  document.getElementById('abNewBranch').value = '';
+  document.getElementById('abNewEmail').value = '';
+  document.getElementById('abNewCC').value = '';
+}
+
+async function abSaveNewRow() {
+  const branch = document.getElementById('abNewBranch').value.trim();
+  const email = document.getElementById('abNewEmail').value.trim();
+  const cc = document.getElementById('abNewCC').value.trim();
+
+  if (!branch) {
+    showToast('Branch name is required', true);
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/address-book/branches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ branch, email, cc }),
+    });
+    const result = await res.json();
+    if (result.ok) {
+      abCancelAddRow();
+      await loadAddressBook();
+    } else {
+      showToast(result.error || 'Failed to add branch', true);
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, true);
+  }
+}
+
+async function abEditCell(spanEl, branch, field) {
+  const current = spanEl.dataset.orig || '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = current;
+  input.className = 'ab-inline-input';
+  input.style.cssText = 'width:100%;padding:4px 8px;font-size:12px;border:1px solid var(--accent);outline:none;';
+
+  spanEl.innerHTML = '';
+  spanEl.appendChild(input);
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const newVal = input.value.trim();
+    spanEl.innerHTML = newVal || `<span style="color:var(--ink-4)">— add ${field}</span>`;
+    spanEl.dataset.orig = newVal;
+    abPatchBranch(branch, field, newVal);
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { input.blur(); }
+    if (e.key === 'Escape') {
+      spanEl.innerHTML = current || `<span style="color:var(--ink-4)">— add ${field}</span>`;
+      spanEl.dataset.orig = current;
+    }
+  });
+}
+
+async function abPatchBranch(branch, field, value) {
+  const info = addressBook.branches[branch] || { email: '', cc: '' };
+  info[field] = value;
+  try {
+    await fetch(`/api/address-book/branches/${encodeURIComponent(branch)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(info),
+    });
+    await loadAddressBook();
+  } catch (err) {
+    showToast('Failed to save: ' + err.message, true);
+  }
+}
+
+async function abDeleteBranch(branch) {
+  if (!confirm(`Remove "${branch}" from the address book?`)) return;
+  try {
+    await fetch(`/api/address-book/branches/${encodeURIComponent(branch)}`, { method: 'DELETE' });
+    await loadAddressBook();
+  } catch (err) {
+    showToast('Failed to delete: ' + err.message, true);
+  }
+}
+
+async function abImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch('/api/address-book/import', { method: 'POST', body: formData });
+    const result = await res.json();
+    if (result.ok) {
+      await loadAddressBook();
+      const errMsg = result.errors && result.errors.length
+        ? ` (${result.errors.length} rows skipped)`
+        : '';
+      showToast(`${result.added} added, ${result.updated} updated${errMsg}`);
+    } else {
+      showToast(result.error || 'Import failed', true);
+    }
+  } catch (err) {
+    showToast('Import error: ' + err.message, true);
+  } finally {
+    input.value = '';
+  }
+}
+
+function abExport() {
+  window.open('/api/address-book/export', '_blank');
+}
+
+// ── Settings ───────────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const data = await res.json();
+    currentSettings = data;
+    document.getElementById('smtp_host').value       = data.smtp_host || '';
+    document.getElementById('smtp_port').value       = data.smtp_port || '587';
+    document.getElementById('smtp_user').value       = data.smtp_user || '';
+    document.getElementById('smtp_pass').value       = '';
+    document.getElementById('from_name').value       = data.from_name || 'KLM Axiva MIS';
+    document.getElementById('use_tls').checked       = data.use_tls !== false;
+    document.getElementById('auto_delete').checked  = data.auto_delete !== false;
+    document.getElementById('email_subject').value   = data.email_subject || '';
+    document.getElementById('email_body').value       = data.email_body || '';
+    document.getElementById('default_cc').value       = data.default_cc || '';
+    document.getElementById('test_recipient').value  = data.test_recipient || '';
+  } catch (err) {
+    console.error('Failed to load settings:', err);
+  }
+}
+
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escHtml(str) {
+  return esc(str);
+}
+
+function escJs(str) {
+  return String(str || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"');
+}
+
+async function saveSettings() {
+  const btn = document.getElementById('saveBtn');
+  const status = document.getElementById('saveStatus');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving…';
+  status.style.display = 'none';
+
+  try {
+    const payload = {
+      smtp_host:       document.getElementById('smtp_host').value.trim(),
+      smtp_port:       parseInt(document.getElementById('smtp_port').value) || 587,
+      smtp_user:       document.getElementById('smtp_user').value.trim(),
+      from_name:       document.getElementById('from_name').value.trim(),
+      use_tls:         document.getElementById('use_tls').checked,
+      auto_delete:     document.getElementById('auto_delete').checked,
+      email_subject:   document.getElementById('email_subject').value,
+      email_body:      document.getElementById('email_body').value,
+      default_cc:      document.getElementById('default_cc').value.trim(),
+      test_recipient:  document.getElementById('test_recipient').value.trim(),
+    };
+    const pass = document.getElementById('smtp_pass').value;
+    if (pass && pass.trim()) payload.smtp_pass = pass;
+
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (res.ok && data.ok) {
+      status.textContent = '✓ Settings saved successfully';
+      status.style.color = 'var(--ok)';
+      status.style.display = 'block';
+      if (payload.smtp_pass) document.getElementById('smtp_pass').value = '';
+    } else {
+      throw new Error(data.error || 'Save failed');
+    }
+  } catch (err) {
+    status.textContent = '✗ ' + err.message;
+    status.style.color = 'var(--err)';
+    status.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '💾 Save All Settings';
+  }
+}
+
+function setBadge(id, ok, message) {
+  const el = document.getElementById(id);
+  el.textContent = message;
+  el.className = 'smtp-badge ' + (ok === true ? 'ok' : ok === false ? 'error' : 'testing');
+}
+
+async function testSMTP() {
+  setBadge('connBadge', null, 'Testing…');
+  const payload = {
+    smtp_host:   document.getElementById('smtp_host').value.trim(),
+    smtp_port:   parseInt(document.getElementById('smtp_port').value) || 587,
+    smtp_user:   document.getElementById('smtp_user').value.trim(),
+    smtp_pass:   document.getElementById('smtp_pass').value,
+    from_name:   document.getElementById('from_name').value.trim(),
+    use_tls:     document.getElementById('use_tls').checked,
+    test_recipient: document.getElementById('test_recipient').value.trim(),
+  };
+  try {
+    const res = await fetch('/api/test-smtp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+    setBadge('connBadge', result.ok, result.ok ? '✓ Connection OK' : '✗ ' + (result.error || 'Failed'));
+  } catch (e) {
+    setBadge('connBadge', false, '✗ Network error');
+  }
+}
+
+async function sendTestEmail() {
+  setBadge('emailBadge', null, 'Sending…');
+  const payload = {
+    smtp_host:   document.getElementById('smtp_host').value.trim(),
+    smtp_port:   parseInt(document.getElementById('smtp_port').value) || 587,
+    smtp_user:   document.getElementById('smtp_user').value.trim(),
+    smtp_pass:   document.getElementById('smtp_pass').value,
+    from_name:   document.getElementById('from_name').value.trim(),
+    use_tls:     document.getElementById('use_tls').checked,
+    test_recipient: document.getElementById('test_recipient').value.trim() ||
+                   document.getElementById('smtp_user').value.trim(),
+  };
+  try {
+    const res = await fetch('/api/test-smtp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+    setBadge('emailBadge', result.ok,
+      result.ok ? '✓ Sent to ' + payload.test_recipient : '✗ ' + (result.error || 'Failed'));
+  } catch (e) {
+    setBadge('emailBadge', false, '✗ Network error');
+  }
+}
+
+// ── Toast notification ────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, isError = false) {
+  let toast = document.getElementById('abToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'abToast';
+    toast.style.cssText = `
+      position:fixed;bottom:24px;right:24px;z-index:9999;
+      background:${isError ? 'var(--err-bg)' : 'var(--ok-bg)'};
+      color:${isError ? 'var(--err)' : 'var(--ok)'};
+      border:1px solid ${isError ? 'var(--err-border)' : 'var(--ok-border)'};
+      padding:10px 18px;font-size:12px;font-weight:600;
+      box-shadow:0 4px 12px rgba(0,0,0,0.15);
+      transition:opacity 0.3s;cursor:pointer;`;
+    toast.onclick = () => fadeToast(toast);
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => fadeToast(toast), 4000);
+}
+
+function fadeToast(toast) {
+  toast.style.opacity = '0';
+  setTimeout(() => toast.remove(), 300);
+}
+
+// ── Init ──────────────────────────────────────────────────────
+window.__DEBUG__ = { ts: Date.now(), addrBook: null }; console.log("INIT: settings page loaded, fetching address book...");
+loadAddressBook();
+</script>
+
+</body>
+</html>

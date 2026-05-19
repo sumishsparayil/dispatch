@@ -1,0 +1,8 @@
+# Panther MIS — Windows Build Dependencies
+# Only packages needed for the Panther app — no torch, no transformers
+Flask==3.0.3
+Werkzeug==3.0.4
+waitress==2.4.4
+pandas==2.1.4
+openpyxl==3.1.2
+pyinstaller==6.20.0

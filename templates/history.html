@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run History — KLM Axiva MIS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="logo">
+    <img src="/static/logo.png" alt="KLM Axiva Finvest" class="logo-img"
+         onerror="this.style.display='none'">
+    <div class="logo-text">
+      <div class="logo-name">KLM AXIVA</div>
+      <div class="logo-sub">MIS Dispatch — KLM Axiva Finvest</div>
+    </div>
+  </div>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/settings">Settings</a>
+    <a href="/history" class="active">History</a>
+  </nav>
+</header>
+
+<main class="main">
+
+  <div class="card">
+    <div class="card-header">
+      <h2><span class="card-icon">📋</span> Run History</h2>
+      <div class="flex items-center gap-12">
+        <span class="text-sec text-sm" id="runCountLabel">—</span>
+        <button class="btn btn-secondary btn-sm" id="clearHistoryBtn" onclick="clearHistory()"
+                style="color:var(--err);border-color:var(--err);">🗑 Clear All History</button>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <div id="runsList">
+        {% if runs %}
+          {% for run in runs %}
+          <div class="run-row" data-run-id="{{ run.run_id }}" id="row-{{ run.run_id }}">
+            <div class="run-row-header" onclick="toggleRun('{{ run.run_id }}')">
+              <div style="flex:1;">
+                <div class="flex items-center gap-8 mb-8">
+                  <strong style="font-size:14px;">
+                    <span style="color:var(--ok);">{{ run.total_sent or 0 }}</span>
+                    <span class="text-sec"> ✓</span>
+                    {% if (run.total_failed or 0) > 0 %}
+                      <span style="color:var(--err);margin-left:8px;">{{ run.total_failed }}</span>
+                      <span class="text-sec"> ✗</span>
+                    {% endif %}
+                  </strong>
+                  <span class="status-badge {{ 'status-sent' if (run.total_failed or 0) == 0 else 'status-warning' }}">
+                    {{ 'All Sent' if (run.total_failed or 0) == 0 else 'Some Failed' }}
+                  </span>
+                </div>
+                <div class="text-sec text-sm" style="line-height:1.6;">
+                  <span class="run-id">{{ run.run_id }}</span>
+                  &nbsp;·&nbsp;
+                  Started <strong>{{ run.started_at or '—' }}</strong>
+                  {% if run.completed_at %}
+                    &nbsp;·&nbsp; Finished <strong>{{ run.completed_at }}</strong>
+                  {% endif %}
+                  {% if run.duration_seconds %}
+                    &nbsp;·&nbsp; Duration <strong>{{ run.duration_seconds }}s</strong>
+                  {% endif %}
+                  {% if run.total_rows %}
+                    &nbsp;·&nbsp; <strong>{{ (run.total_rows or 0)|int|format_number if false else run.total_rows }}</strong> rows
+                  {% endif %}
+                  {% if run.filename %}
+                    &nbsp;·&nbsp; <span style="font-style:italic;">{{ run.filename }}</span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="flex items-center gap-12">
+                <div class="expand-icon" style="font-size:16px;color:var(--ink-3);">▸</div>
+              </div>
+            </div>
+
+            <div class="run-detail" id="detail-{{ run.run_id }}">
+              <div style="padding:12px 0 16px;">
+                <div class="empty-state" style="padding:16px;">
+                  <div class="text-sec text-sm">Loading detail…</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <div class="empty-title">No runs recorded yet</div>
+            <div class="text-sec text-sm mt-8">Run the dispatcher from the Dashboard to see history here.</div>
+            <a href="/" class="btn btn-primary mt-16" style="display:inline-flex;">Go to Dashboard</a>
+          </div>
+        {% endif %}
+      </div>
+
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+
+</main>
+
+<script>
+const totalRuns = {{ runs|length }};
+document.getElementById('runCountLabel').textContent =
+  totalRuns + ' run' + (totalRuns !== 1 ? 's' : '') + ' recorded';
+
+async function toggleRun(runId) {
+  const row = document.getElementById('row-' + runId);
+  const detail = document.getElementById('detail-' + runId);
+  const icon = row ? row.querySelector('.expand-icon') : null;
+
+  if (row && row.classList.contains('expanded')) {
+    row.classList.remove('expanded');
+    if (icon) icon.textContent = '▸';
+    return;
+  }
+
+  if (row) {
+    row.classList.add('expanded');
+    if (icon) icon.textContent = '▾';
+  }
+
+  if (detail && detail.innerHTML.includes('Loading')) {
+    try {
+      const res = await fetch('/api/run-detail/' + runId);
+      const emails = await res.json();
+
+      if (!emails || emails.length === 0) {
+        detail.innerHTML = '<div style="padding:16px 0;"><div class="text-sec text-sm">No email records found.</div></div>';
+        return;
+      }
+
+      const sent = emails.filter(e => e.status === 'sent').length;
+      const failed = emails.filter(e => e.status === 'failed').length;
+      const total = emails.length;
+
+      let html = `
+        <div class="run-metrics">
+          <div class="run-metric">
+            <div class="rm-val">${total}</div>
+            <div class="rm-lbl">Total Emails</div>
+          </div>
+          <div class="run-metric">
+            <div class="rm-val" style="color:var(--ok)">${sent}</div>
+            <div class="rm-lbl">Sent ✓</div>
+          </div>
+          <div class="run-metric">
+            <div class="rm-val" style="color:var(--err)">${failed}</div>
+            <div class="rm-lbl">Failed ✗</div>
+          </div>
+          <div class="run-metric">
+            <div class="rm-val">${total > 0 ? Math.round(sent/total*100) + '%' : '—'}</div>
+            <div class="rm-lbl">Success Rate</div>
+          </div>
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Branch</th>
+              <th>Recipient</th>
+              <th>CC</th>
+              <th>Subject</th>
+              <th>Status</th>
+              <th>Error</th>
+              <th>Sent At</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      emails.forEach(e => {
+        const statusClass = e.status === 'sent'  ? 'status-sent'  :
+                            e.status === 'failed' ? 'status-failed' : 'status-pending';
+        const statusTxt   = e.status === 'sent'  ? '✓ Sent'  :
+                           e.status === 'failed' ? '✗ Failed' : '● Pending';
+        const err = e.error_message || '—';
+        const sentAt = e.sent_at ? e.sent_at.replace('T', ' ').substring(0, 19) : '—';
+
+        html += `<tr>
+          <td><strong>${esc(e.branch || '—')}</strong></td>
+          <td style="font-size:12px;">${esc(e.recipient || '—')}</td>
+          <td style="font-size:12px;color:var(--ink-3);">${esc(e.cc || '—')}</td>
+          <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+              title="${esc(e.subject || '')}">${esc(e.subject || '—')}</td>
+          <td><span class="status-badge ${statusClass}">${statusTxt}</span></td>
+          <td style="font-size:11px;color:${err !== '—' ? 'var(--err)' : 'var(--ink-3)'};max-width:120px;
+                     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+              title="${esc(err)}">${esc(err)}</td>
+          <td style="font-size:11px;color:var(--ink-3);">${sentAt}</td>
+        </tr>`;
+      });
+
+      html += `</tbody></table>`;
+      html += `
+        <div class="run-actions">
+          <button class="btn btn-secondary btn-sm" onclick="exportRunLog('${runId}')">📥 Export CSV</button>
+        </div>`;
+
+      detail.innerHTML = html;
+
+    } catch (err) {
+      detail.innerHTML = '<div style="padding:16px 0;"><div class="text-err text-sm">Failed to load detail.</div></div>';
+    }
+  }
+}
+
+function esc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function exportRunLog(runId) {
+  window.open('/api/export-log/' + runId, '_blank');
+}
+
+async function clearHistory() {
+  if (!confirm('Delete all run history? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/history/clear', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      // Remove all run rows from DOM
+      document.querySelectorAll('.run-row').forEach(r => r.remove());
+      document.getElementById('runCountLabel').textContent = '0 runs recorded';
+      document.getElementById('runsList').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <div class="empty-title">History cleared</div>
+          <div class="text-sec text-sm mt-8">Run the dispatcher to populate history again.</div>
+          <a href="/" class="btn btn-primary mt-16" style="display:inline-flex;">Go to Dashboard</a>
+        </div>`;
+    }
+  } catch (err) {
+    alert('Failed to clear history: ' + err.message);
+  }
+}
+</script>
+
+</body>
+</html>
