@@ -1,12 +1,10 @@
-"""Panther — MIS Email Dispatch Application (v4).
+"""
+Dispatch — Flask Web Application
+KLM Axiva Finvest — MIS Email Dispatch System
 
-Architecture (v4):
-  - Excel upload contains ONLY raw data (no Mail List sheet)
-  - Branch names extracted from 'Branch' column in the Data sheet
-  - Email config: recipient mapping + subject/body template → stored in db/dispatch_data.json
-  - Settings tab: SMTP config + Email template editor + Branch mapping table
-  - Engine pulls email config from JSON store, not from Excel
-  - Address Book: persistent branch email/CC store at db/address_book.json
+Handles all HTTP routes (pages + API) and orchestrates the dispatch pipeline.
+Session state lives in module scope ( cleared on /api/clear ).
+SMTP config is never stored in branch_mappings — address_book is the single store.
 """
 
 import gc
@@ -17,7 +15,9 @@ import time as _time
 import threading
 import queue
 
-# ── App directory (dev vs bundled exe) ─────────────────────────
+# ── App directory (dev vs bundled exe) ─────────────────────────────────────
+# When frozen (PyInstaller exe), sys.executable points to the .exe itself.
+# When running as .py, __file__ points to app.py → use its directory.
 if getattr(sys, 'frozen', False):
     APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
 else:
@@ -45,38 +45,55 @@ from db.address_book import (
     import_from_excel, export_to_excel,
 )
 
-# ── Default from name (single source of truth) ─────────────────
+# ── Default from name ──────────────────────────────────────────────────────────
+# Single source of truth. Used when the user has not set a custom from name.
 DEFAULT_FROM_NAME = 'KLM Axiva MIS'
 
-# ── App setup ──────────────────────────────────────────────────
+# ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['UPLOAD_FOLDER'] = os.path.join(APP_DIR, 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024   # 200 MB limit
+app.config['MAX_CONTENT_LENGTH'] = 200 * 102 * 1024   # 200 MB file upload limit
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Ensure DB and address book exist on first run
+# Ensure the JSON store and address book exist before the first request is handled.
 init_db()
 
-# ── In-memory session ──────────────────────────────────────────
+# ── In-memory session ──────────────────────────────────────────────────────────
+# Holds the parsed DataFrame and branch list for the CURRENT upload session.
+# Cleared when the user clicks "Start Over" (/api/clear).
+# NOT persisted — lost on app restart.
 _session = {
-    'data_df':      None,
-    'branches':     [],
-    'columns':      [],
-    'branch_col':   None,   # exact 'Branch' column name from parser
-    'total_rows':   0,
-    'filename':     None,
-    'id':           None,
+    'data_df':      None,      # Pandas DataFrame — full parsed Excel sheet
+    'branches':     [],        # List[dict] — [{branch: str, count: int}, ...]
+    'columns':      [],        # List[str] — column names from the Excel file
+    'branch_col':   None,      # Exact column name for 'Branch' (e.g. 'Branch' or 'BRANCH')
+    'total_rows':   0,         # Total data rows in the parsed DataFrame
+    'filename':     None,      # Original filename the user uploaded
+    'id':           None,      # Unique session ID (UUID hex prefix, 12 chars)
 }
 
-# ── Parse progress queue ───────────────────────────────────────
+# ── Parse progress queue ───────────────────────────────────────────────────────
+# Queue used by PantherParser to emit SSE progress events during Excel parsing.
+# The background parse thread writes to this queue; the SSE endpoint reads from it.
 _parse_progress_queue = queue.Queue()
-_current_parser = [None]   # wrapped in list for mutability in closure
+
+# ── Current parser (weak reference via list) ─────────────────────────────────
+# Wrapped in a list so the closure in the parse route can mutate it.
+# Set to [None] after session is cleared to allow GC of the parser object.
+_current_parser = [None]
 
 
-# ── Helpers ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Helper functions
+# ══════════════════════════════════════════════════════════════════════════════
+
 def _smtp_settings():
-    """SMTP config dict for the mailer — single source of truth."""
+    """
+    Build the SMTP config dict for the mailer.
+    Reads from panther_data.json (settings store). smtp_pass falls back to
+    the OS keyring if not found in JSON.
+    """
     s = get_settings()
     return {
         'smtp_host': s.get('smtp_host', ''),
@@ -88,505 +105,476 @@ def _smtp_settings():
     }
 
 
-# ── Pages ───────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Page routes
+# ══════════════════════════════════════════════════════════════════════════════
+
 @app.route('/')
 def index():
+    """Main dashboard — file upload + progress + branch review."""
     return render_template('index.html')
 
 
 @app.route('/settings')
 def settings_page():
+    """Settings page — SMTP config, email template, address book."""
     return render_template('settings.html')
 
 
 @app.route('/history')
 def history_page():
-    runs = get_run_history()
-    return render_template('history.html', runs=runs)
+    """Run history page — past dispatch runs with sent/failed counts."""
+    return render_template('history.html')
 
 
-# ── API: Upload & Parse ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# API: Upload & Parse
+# ══════════════════════════════════════════════════════════════════════════════
+
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
+    """
+    Accept an Excel file upload and start a background parse.
+    Returns immediately with session_id. Progress streamed via /api/upload-progress.
+
+    Request:  multipart/form-data with file field 'file'
+    Response: {session_id: str, filename: str, total_rows: int, total_branches: int}
+    Errors:   400 if no file, 415 if not .xlsx/.xlsm
+    """
     if 'file' not in request.files:
-        return jsonify({'ok': False, 'error': 'No file provided.'}), 400
+        return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
     if not file.filename:
-        return jsonify({'ok': False, 'error': 'No file selected.'}), 400
+        return jsonify({'error': 'No file selected'}), 400
 
-    filename = secure_filename(file.filename or 'upload.xlsx')
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xlsm'):
+        return jsonify({'error': 'Only .xlsx and .xlsm files are supported'}), 415
+
+    # Save to uploads/ with a secure name (original name kept for display)
+    filename = secure_filename(file.filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    # Clear any old progress
+    # Clear any stale progress from a previous parse
     while not _parse_progress_queue.empty():
-        try:
-            _parse_progress_queue.get_nowait()
-        except queue.Empty:
-            break
+        _parse_progress_queue.get_nowait()
 
+    # Spawn background parser
     def background_parse():
-        def progress_callback(stage, message, percent):
-            _parse_progress_queue.put({
-                'status': stage,
-                'message': message,
-                'progress': percent,
-            })
-
+        parser = PantherParser(filepath, progress_callback=_emit_parse_progress)
+        _current_parser[0] = parser
         try:
-            parser = PantherParser(filepath, progress_callback=progress_callback)
-            _current_parser[0] = parser
             result = parser.parse()
-
+            # Store parsed data in the in-memory session
             _session['data_df']    = result['data_df']
             _session['branches']   = result['branches']
-            _session['columns']   = result['columns']
-            _session['branch_col']= result['branch_col']
-            _session['total_rows']= result['total_data_rows']
+            _session['columns']    = result['columns']
+            _session['branch_col'] = result['branch_col']
+            _session['total_rows'] = result['total_data_rows']
             _session['filename']   = filename
             _session['id']         = result['session_id']
-
-            # Emit done with full summary
             _parse_progress_queue.put({
-                'status': 'done',
-                'message': f"Ready — {result['total_branches']} branches, {result['total_data_rows']:,} rows",
-                'progress': 100,
-                'session': {
-                    'session_id':     result['session_id'],
-                    'filename':       filename,
-                    'total_rows':     result['total_data_rows'],
-                    'total_branches': result['total_branches'],
-                    'branches':       result['branches'],
-                    'columns':        result['columns'],
-                    'branch_col':     result['branch_col'],
-                },
+                'stage':    'done',
+                'message':  f"Ready — {result['total_branches']} branches, {result['total_data_rows']:,} rows",
+                'percent':  100,
             })
         except ValueError as e:
-            _parse_progress_queue.put({'status': 'error', 'message': str(e), 'progress': 0})
+            _parse_progress_queue.put({'stage': 'error', 'message': str(e), 'percent': 0})
         except Exception as e:
-            _parse_progress_queue.put({'status': 'error', 'message': f'Parse error: {e}', 'progress': 0})
+            _parse_progress_queue.put({'stage': 'error', 'message': f'Unexpected error: {e}', 'percent': 0})
         finally:
-            _current_parser[0] = None
+            # Always clean up the uploaded file after parsing (unless debugging)
             try:
                 os.remove(filepath)
             except OSError:
                 pass
 
-    t = threading.Thread(target=background_parse, daemon=True)
-    t.start()
+    threading.Thread(target=background_parse, daemon=True).start()
 
-    return jsonify({'ok': True})
+    return jsonify({'filename': filename, 'message': 'Parsing started...'})
+
+
+def _emit_parse_progress(stage, message, percent):
+    """SSE progress callback registered with PantherParser during parse."""
+    _parse_progress_queue.put({'stage': stage, 'message': message, 'percent': percent})
 
 
 @app.route('/api/upload-progress')
 def api_upload_progress():
+    """
+    SSE stream — yields parse progress events as Server-Sent Events.
+    Clients should connect before calling /api/upload.
+    Each event is a JSON object: {stage, message, percent}
+    """
     def generate():
-        last_heartbeat = _time.time()
         while True:
             try:
-                entry = _parse_progress_queue.get(timeout=25)
-                yield f"data: {json.dumps(entry)}\n\n"
-                if entry.get('status') in ('done', 'error'):
+                event = _parse_progress_queue.get(timeout=60)
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get('stage') in ('done', 'error'):
                     break
             except queue.Empty:
-                elapsed = _time.time() - last_heartbeat
-                if elapsed >= 20:
-                    yield f": heartbeat\n\n"
-                    last_heartbeat = _time.time()
-                continue
-            else:
-                last_heartbeat = _time.time()
-        yield f": stream closed\n\n"
+                yield f"data: {json.dumps({'stage': 'timeout', 'message': 'Parse timeout', 'percent': 0})}\n\n"
+                break
 
     return Response(generate(), mimetype='text/event-stream')
 
 
-@app.route('/api/session', methods=['GET'])
+@app.route('/api/session')
 def api_session():
-    if _session['data_df'] is None:
-        return jsonify({'active': False})
+    """
+    Return the current in-memory session state.
+    Used by the UI to populate the branch review checklist after upload.
 
+    Response: {
+        id:           str  or null,
+        filename:     str  or null,
+        total_rows:   int,
+        total_branches: int,
+        branches:     [{branch: str, count: int}, ...],
+        columns:      [str, ...],
+        branch_col:   str  or null,
+    }
+    """
     return jsonify({
-        'active':          True,
-        'session_id':      _session['id'],
-        'filename':        _session['filename'],
-        'total_rows':      _session['total_rows'],
-        'total_branches':  len(_session['branches']),
-        'branches':        _session['branches'],
-        'columns':         _session['columns'],
-        'branch_col':      _session['branch_col'],
+        'id':             _session['id'],
+        'filename':       _session['filename'],
+        'total_rows':     _session['total_rows'],
+        'total_branches': len(_session['branches']),
+        'branches':       _session['branches'],
+        'columns':        _session['columns'],
+        'branch_col':     _session['branch_col'],
     })
 
 
-# ── API: Run Dispatch ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# API: Dispatch
+# ══════════════════════════════════════════════════════════════════════════════
+
 @app.route('/api/run', methods=['POST'])
 def api_run():
-    if _session['data_df'] is None:
-        return jsonify({'error': 'No data loaded. Upload a file first.'}), 400
+    """
+    Start the email dispatch run for the current session.
+    Must be called AFTER /api/session returns a non-null id.
 
-    settings = get_settings()
-    if not settings.get('smtp_host'):
-        return jsonify({'error': 'SMTP not configured. Go to Settings first.'}), 400
+    Request body (JSON, optional):
+        excluded_branches: [str, ...]   — branches unchecked by user
+        test_only:         bool         — send to operator's own email only
 
-    json_body = request.get_json(silent=True) or {}
-    excluded_branches = json_body.get('excluded_branches', [])
-    test_only = json_body.get('test_only', False)
+    Response: {run_id: str, total_branches: int}
+    """
+    if _session['id'] is None:
+        return jsonify({'error': 'No file uploaded. Please upload a file first.'}), 400
 
-    # Build settings for the engine — address_book is the single source of truth
-    ab = get_address_book()
+    data = request.get_json() or {}
+    excluded_branches = data.get('excluded_branches', [])
+    test_only        = data.get('test_only', False)
+
+    # Build full settings dict for the engine.
+    # branch_mappings is built from address_book.json — the single authoritative store.
+    ab             = get_address_book()
     branch_mappings = {
         str(branch): {'email': info.get('email', ''), 'cc': info.get('cc', '')}
         for branch, info in ab.get('branches', {}).items()
         if info.get('email')
     }
-    full_settings = {
-        **_smtp_settings(),
-        'auto_delete': settings.get('auto_delete', True),
-        'branch_mappings': branch_mappings,
-        'email_subject': settings.get('email_subject', ''),
-        'email_body': settings.get('email_body', ''),
-    }
-
-    # Test mode: redirect first branch to operator's own email
-    test_branches = _session['branches']
-    if test_only:
-        test_recipient = settings.get('test_recipient', '').strip()
-        if not test_recipient:
-            test_recipient = settings.get('smtp_user', '').strip()
-        if not test_recipient:
-            return jsonify({'error': 'No test recipient configured. Set a Test Recipient email in Settings, or ensure SMTP Username is set.'}), 400
-        if test_branches:
-            first = test_branches[0]['branch']
-            bm = {**branch_mappings, first: {'email': test_recipient, 'cc': ''}}
-            full_settings['branch_mappings'] = bm
-
-    PantherEngine.clear_log()
+    settings = {**get_settings(), 'branch_mappings': branch_mappings}
 
     engine = PantherEngine(
-        branches=test_branches,
-        data_df=_session['data_df'],
-        branch_col=_session['branch_col'],
-        settings=full_settings,
-        upload_folder=app.config['UPLOAD_FOLDER'],
-        filename=_session['filename'],
-        test_only=test_only,
-        excluded_branches=excluded_branches,
+        branches          = _session['branches'],
+        data_df           = _session['data_df'],
+        branch_col        = _session['branch_col'],
+        settings          = settings,
+        upload_folder     = app.config['UPLOAD_FOLDER'],
+        filename          = _session['filename'] or '',
+        excluded_branches = excluded_branches,
+        test_only         = test_only,
     )
-    engine.start()
 
-    return jsonify({'ok': True})
+    # Test mode: override all recipients → send only to the operator's own email.
+    # The engine's test_only flag redirects to the SMTP user (operator's address).
+    if test_only:
+        engine.settings['test_recipient'] = settings.get('smtp_user', '')
+
+    engine.start()
+    return jsonify({'run_id': engine.run_id, 'total_branches': len(_session['branches'])})
 
 
 @app.route('/api/progress')
 def api_progress():
+    """
+    SSE stream — yields dispatch log entries as Server-Sent Events.
+    Each event is a JSON object: {event, message, level, timestamp, ...}
+    """
+    last_log_len = [0]
+
     def generate():
-        last_len = 0
-        last_heartbeat = _time.time()
         while True:
-            log = PantherEngine.get_log()
-            if len(log) != last_len:
-                last_len = len(log)
-                entry = log[-1]
-                yield f"data: {json.dumps(entry)}\n\n"
-                if entry.get('done'):
-                    break
-            elapsed = _time.time() - last_heartbeat
-            if elapsed >= 15:
-                yield f": heartbeat\n\n"
-                last_heartbeat = _time.time()
-            _time.sleep(0.4)
-        yield f": stream closed\n\n"
+            log_entries = PantherEngine.get_log()
+            if len(log_entries) > last_log_len[0]:
+                for entry in log_entries[last_log_len[0]:]:
+                    yield f"data: {json.dumps(entry)}\n\n"
+                    last_log_len[0] = len(log_entries)
+                    if entry.get('done'):
+                        return
+            _time.sleep(0.3)
 
     return Response(generate(), mimetype='text/event-stream')
 
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
+    """
+    Signal the running engine to stop gracefully.
+    The engine checks _stop_flag between each branch and exits the loop.
+    """
     PantherEngine.stop()
-    return jsonify({'ok': True})
+    return jsonify({'message': 'Stop signalled'})
 
 
-# ── API: Settings ───────────────────────────────────────────────
-@app.route('/api/settings', methods=['GET', 'POST'])
-def api_settings():
+# ══════════════════════════════════════════════════════════════════════════════
+# API: Settings
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/settings', methods=['GET'])
+def api_settings_get():
     """
-    GET: returns SMTP config + email template only.
-    POST: saves SMTP/email settings. branch_mappings is NOT saved here —
-    use the address-book API instead.
+    Return all settings from panther_data.json.
+    Omits branch_mappings (never stored here — address_book is the only store).
     """
-    if request.method == 'POST':
-        raw = request.get_json() or {}
-        # Strip branch_mappings silently — address book is the only store
-        raw = {k: v for k, v in raw.items() if k != 'branch_mappings'}
-        save_settings_batch(raw)
-        return jsonify({'ok': True})
-    return jsonify(get_settings())
+    settings = get_settings()
+    # Never leak smtp_pass to the frontend — return only stored flag
+    return jsonify({k: v for k, v in settings.items() if k != 'smtp_pass'})
+
+
+@app.route('/api/settings', methods=['POST'])
+def api_settings_save():
+    """
+    Save one or more settings to panther_data.json.
+    branch_mappings is silently ignored — address_book is the authoritative store.
+    smtp_pass is stored directly (plain text — acceptable for internal tool behind VPN).
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No settings provided'}), 400
+
+    # Strip branch_mappings silently — never save it to the settings store.
+    save_settings_batch({k: v for k, v in data.items() if k != 'branch_mappings'})
+    return jsonify({'message': 'Settings saved'})
 
 
 @app.route('/api/test-smtp', methods=['POST'])
 def api_test_smtp():
-    data = request.get_json() or {}
-    pass_value = data.get('smtp_pass', '') or get_password_for_smtp()
-    settings = {
-        'smtp_host':  data.get('smtp_host', ''),
-        'smtp_port':  int(data.get('smtp_port') or 587),
-        'smtp_user':  data.get('smtp_user', ''),
-        'smtp_pass':  pass_value,
-        'from_name':  data.get('from_name', DEFAULT_FROM_NAME),
-        'use_tls':    data.get('use_tls', True),
-    }
-    try:
-        mailer = PantherMailer(settings)
-        result = mailer.send_test(to=data.get('test_recipient', ''))
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 400
+    """
+    Send a minimal test email to verify SMTP connectivity.
+    Sent to the operator's own SMTP address (smtp_user from settings).
+    """
+    data     = request.get_json() or {}
+    recipient = data.get('recipient', '') or get_settings().get('smtp_user', '')
+    settings = _smtp_settings()
+    mailer   = PantherMailer(settings)
+
+    result = mailer.send_test(to=recipient)
+    if result.get('ok'):
+        return jsonify({'message': f'Test email sent to {recipient}'})
+    return jsonify({'error': result.get('error', 'Unknown error')}), 500
 
 
-# ── API: Address Book ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# API: Address Book
+# ══════════════════════════════════════════════════════════════════════════════
+
 @app.route('/api/address-book', methods=['GET'])
-def api_address_book():
-    """Returns full address book."""
+def api_address_book_get():
+    """Return the full address book (branches dict + default_cc)."""
     return jsonify(get_address_book())
 
 
 @app.route('/api/address-book/branches', methods=['POST'])
-def api_address_book_add_branch():
-    """Add a new branch. Payload: {branch, email, cc}"""
-    data = request.get_json() or {}
-    branch = str(data.get('branch', '')).strip()
-    if not branch:
-        return jsonify({'ok': False, 'error': 'Branch name is required'}), 400
-    add_branch(branch, data.get('email', ''), data.get('cc', ''))
-    return jsonify({'ok': True})
+def api_address_book_upsert():
+    """
+    Add or update a single branch entry.
+    Request body: {branch: str, email: str, cc: str}
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Branch data required'}), 400
+    update_branch(
+        branch = data.get('branch', '').strip(),
+        email  = data.get('email', '').strip(),
+        cc     = data.get('cc', '').strip(),
+    )
+    return jsonify({'message': 'Branch updated'})
 
 
-@app.route('/api/address-book/branches/<path:branch>', methods=['PUT'])
-def api_address_book_update_branch(branch):
-    """Update a branch. Payload: {email, cc}"""
-    data = request.get_json() or {}
-    update_branch(branch, data.get('email', ''), data.get('cc', ''))
-    return jsonify({'ok': True})
-
-
-@app.route('/api/address-book/branches/<path:branch>', methods=['DELETE'])
-def api_address_book_delete_branch(branch):
-    """Delete a branch from address book."""
+@app.route('/api/address-book/branches/<branch>', methods=['DELETE'])
+def api_address_book_delete(branch):
+    """Remove a branch from the address book."""
     delete_branch(branch)
-    return jsonify({'ok': True})
+    return jsonify({'message': f'{branch} removed'})
 
 
 @app.route('/api/address-book/import', methods=['POST'])
 def api_address_book_import():
-    """Bulk import branches from uploaded .xlsx"""
+    """
+    Import branches from an Excel file (multipart/form-data, field 'file').
+    Expected columns: Branch, Email, CC (column names are case-insensitive).
+    Returns: {added: int, updated: int, errors: [str, ...]}
+    """
     if 'file' not in request.files:
-        return jsonify({'ok': False, 'error': 'No file provided'}), 400
+        return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
-    if not file.filename.endswith('.xlsx'):
-        return jsonify({'ok': False, 'error': 'Only .xlsx files are supported'}), 400
+    ext  = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xlsm'):
+        return jsonify({'error': 'Only .xlsx and .xlsm files are supported'}), 415
 
-    filename = secure_filename(file.filename or 'import.xlsx')
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(file.filename))
     file.save(filepath)
 
     try:
         result = import_from_excel(filepath)
+        return jsonify(result)
     finally:
         try:
             os.remove(filepath)
         except OSError:
             pass
 
-    return jsonify({'ok': True, **result})
-
 
 @app.route('/api/address-book/export', methods=['GET'])
 def api_address_book_export():
-    """Download address_book.xlsx"""
-    try:
-        buf = export_to_excel()
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-    from flask import make_response
-    response = make_response(buf)
-    response.headers['Content-Type'] = (
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    """Download the address book as a .xlsx file."""
+    buf = export_to_excel()
+    return Response(
+        buf.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename=address_book.xlsx'},
     )
-    response.headers['Content-Disposition'] = (
-        'attachment; filename=address_book.xlsx'
-    )
-    return response
 
 
 @app.route('/api/address-book/fill-from-session', methods=['POST'])
-def api_address_book_fill_from_session():
-    """Create address book stubs for branches in the current session that don't yet exist."""
-    if _session['data_df'] is None:
-        return jsonify({'ok': False, 'error': 'No active session'}), 400
-
+def api_fill_from_session():
+    """
+    For every branch in the current session that has NO email in the address book,
+    pre-fill the email field with an empty string as a placeholder.
+    Allows the operator to fill in emails directly in the address book tab.
+    """
+    ab = get_address_book()
     added = 0
-    for b in _session['branches']:
+    for b in _session.get('branches', []):
         name = b['branch']
-        ab = get_address_book()
-        if name not in ab['branches']:
-            add_branch(name, '', '')
+        if name not in ab.get('branches', {}):
+            add_branch(branch=name, email='', cc='')
             added += 1
-
-    return jsonify({'ok': True, 'added': added})
-
-
-# ── API: History ───────────────────────────────────────────────
-@app.route('/api/history/clear', methods=['POST'])
-def api_history_clear():
-    """Delete all run history and email records."""
-    from db.database import _load, _save
-    store = _load()
-    store['runs'] = []
-    store['emails'] = []
-    _save(store)
-    return jsonify({'ok': True, 'message': 'All history cleared'})
+    return jsonify({'message': f'{added} branch placeholders added'})
 
 
-@app.route('/api/run-detail/<run_id>', methods=['GET'])
-def api_run_detail(run_id):
+# ══════════════════════════════════════════════════════════════════════════════
+# API: History
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/history', methods=['GET'])
+def api_history():
+    """Return the list of past dispatch runs (most recent first)."""
+    return jsonify(get_run_history())
+
+
+@app.route('/api/history/<run_id>', methods=['GET'])
+def api_history_detail(run_id):
+    """
+    Return per-email records for a specific run.
+    Each record: {recipient, cc, subject, branch, status, error_message, sent_at}
+    """
     return jsonify(get_run_detail(run_id))
 
 
-@app.route('/api/export-log/<run_id>', methods=['GET'])
-def api_export_log(run_id):
-    from io import StringIO
-    import csv
+# ══════════════════════════════════════════════════════════════════════════════
+# API: Clear Session
+# ══════════════════════════════════════════════════════════════════════════════
 
-    rows = get_run_detail(run_id)
-    si = StringIO()
-    writer = csv.writer(si)
-    writer.writerow([
-        'Branch', 'Recipient', 'CC', 'Subject', 'Status', 'Error', 'Sent At'
-    ])
-    for r in rows:
-        writer.writerow([
-            r.get('branch', ''),
-            r.get('recipient', ''),
-            r.get('cc', ''),
-            r.get('subject', ''),
-            r.get('status', ''),
-            r.get('error_message', ''),
-            r.get('sent_at', ''),
-        ])
-
-    output = Response(si.getvalue(), mimetype='text/csv')
-    output.headers['Content-Disposition'] = (
-        f'attachment; filename=dispatch_run_{run_id}.csv'
-    )
-    return output
-
-
-# ── API: Clear session ─────────────────────────────────────────
 @app.route('/api/clear', methods=['POST'])
 def api_clear():
-    # Idempotent — no error if already clear
+    """
+    Clear the in-memory session and release RAM.
+    Called when the user clicks "Start Over".
+    Idempotent — safe to call even if no session is active.
+    """
     _session['data_df']    = None
     _session['branches']   = []
     _session['columns']    = []
     _session['branch_col'] = None
     _session['total_rows'] = 0
     _session['filename']   = None
-    _session['id']         = None
-    _current_parser[0] = None   # release parser reference
-    while not _parse_progress_queue.empty():
-        try:
-            _parse_progress_queue.get_nowait()
-        except queue.Empty:
-            break
+    _session['id']        = None
+
+    # Release the parser reference so it can be garbage collected.
+    _current_parser[0] = None
     PantherEngine.clear_log()
     gc.collect()
-    return jsonify({'ok': True, 'message': 'Session cleared, RAM released'})
+
+    return jsonify({'message': 'Session cleared'})
 
 
-# ── API: Download reference template ──────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# API: Download Reference Template
+# ══════════════════════════════════════════════════════════════════════════════
+
 @app.route('/api/download-template', methods=['GET'])
 def api_download_template():
+    """
+    Generate and serve a blank reference Excel template showing the expected
+    column structure for the data file (Branch column highlighted).
+    """
     import io
-    import pandas as pd
-    from flask import make_response
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
 
-    cols = [
-        'SL NO', 'Branch Name', 'Sangam Name', 'Center Meeting Day',
-        'Demand Meeting Day', 'Payment Frequency', 'LOAN NUMBER',
-        'OLD ACCOUNT NUMBER', 'CUSTOMER ID', 'CUSTOMER NAME',
-        'CUSTOMER MOBILE NO', 'NOMINEE NAME', 'NOMINEE MOBILE NO',
-        'LOAN DATE', 'LOAN AMOUNT', 'PRESENT OUTSTANDING',
-        'PRINCIPAL OUTSTANDING', 'INTEREST OUTSTANDING', 'ARREAR AMOUNT',
-        'INTEREST', 'PRINCIMFE', 'Aging Days', 'Credit Executive Name',
-        'Last Paid Date', 'Prepaid Amount', 'Total Installments',
-        'Current Installment No.', 'Current Schedule Date',
-        'Paid Installments', 'Pending Installments',
-        'First OD reflect Date', 'Installment Amount',
-        'Final Installment Scheduled Date', 'Last Payment Date',
-        'Paid Amount1', 'Last Payment Date 1',
-        'Paid Amount2', 'Last Payment Date 2',
-        'Paid Amount3', 'Last Payment Date 3', 'Paid Amount',
-        'Product Code-Name', 'Scheme Code-Name', 'SMA Classification',
-        'First Installment Date', 'Company', 'Area', 'Region', 'SMA',
-        'Demand Slip Amount', 'Net OD', 'March SMA Status',
-        'Settlement Amt', 'FY LD', 'Loan Type',
-        'Nominee name', 'Nominee mobile nr', 'Bucket Movement',
-        'Category', 'Slip Bucket', 'Allocation', 'Last Activate Month',
-        'Last Activated Year', 'Unolo total visit', 'Visit employee ID',
-        'Visit employee ID Astdail connected',
-    ]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Data'
 
-    example = {col: '' for col in cols}
-    example['Branch']        = 'PL-ALAPPUZHA'
-    example['CUSTOMER NAME'] = 'Sample Customer'
-    example['LOAN AMOUNT']   = '50000'
+    headers = ['Branch', 'LOAN AMOUNT', 'PRINCIPAL OUTSTANDING', 'DUE DATE']
+    ws.append(headers)
 
-    df = pd.DataFrame([example])[cols]
+    # Style the header row so it matches what the parser expects.
+    header_fill = PatternFill(start_color='D6E4F0', end_color='D6E4F0', fill_type='solid')
+    header_font = Font(bold=True, color='1F2937', name='Calibri', size=10)
+    header_align = Alignment(horizontal='center', vertical='center')
+
+    for cell in ws[1]:
+        cell.font  = header_font
+        cell.fill  = header_fill
+        cell.alignment = header_align
+
+    # Add one example row so the user knows the expected data format.
+    ws.append(['PL-ALAPPUZHA', 0, 0, '2026-03-31'])
+    ws.append(['PL-ERNAKULAM', 0, 0, '2026-03-31'])
 
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Data', index=False)
-
-        # Branch mapping reference sheet
-        mapping_df = pd.DataFrame([
-            {'Branch': 'PL-ALAPPUZHA', 'Email': 'mfin.alappuzha@klmaxiva.com', 'CC': ''},
-            {'Branch': 'PL-ERNAKULAM', 'Email': 'mfin.ernakulam@klmaxiva.com', 'CC': ''},
-        ])
-        mapping_df.to_excel(writer, sheet_name='Branch Mapping', index=False)
-
+    wb.save(buf)
     buf.seek(0)
-    response = make_response(buf.getvalue())
-    response.headers['Content-Type'] = (
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+    return Response(
+        buf.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename=dispatch_template.xlsx'},
     )
-    response.headers['Content-Disposition'] = (
-        'attachment; filename=Panther_Reference_Template.xlsx'
-    )
-    return response
 
 
-# ── Run ───────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Run
+# ══════════════════════════════════════════════════════════════════════════════
+
 if __name__ == '__main__':
-    import socket
+    import argparse
 
-    PORT = 5000
-    for attempt in range(10):
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.bind(('0.0.0.0', PORT))
-            s.close()
-            break
-        except OSError:
-            PORT += 1
-    else:
-        print('ERROR: Could not find a free port between 5000-5009.')
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description='Dispatch MIS Email System')
+    parser.add_argument('--port', type=int, default=5000, help='Port to run on (default: 5000)')
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
+    args = parser.parse_args()
 
-    print(f'Panther running on http://localhost:{PORT}')
-    print(f'Network: http://0.0.0.0:{PORT}')
-
-    from waitress import serve
-    serve(app, host='0.0.0.0', port=PORT, threads=8)
+    print(f"Starting Dispatch on {args.host}:{args.port}")
+    app.run(host=args.host, port=args.port, debug=False, threaded=True)
