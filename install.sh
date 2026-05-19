@@ -452,13 +452,25 @@ step_service() {
 
 step_port() {
     log_step "Network Configuration"
-    echo "  Dispatch runs as a local web app."
-    echo -e "  Default port: ${C_BOLD}$PORT${C_RESET}"
+    echo "  Dispatch runs as a local web app on a port of your choosing."
+    echo "  Choose a port that is not used by another application."
+    echo ""
+    echo -e "  Suggestions:  ${C_DIM}5000 (default)  ·  5100  ·  8080  ·  3000${C_RESET}"
+    echo -e "  Avoid:        ${C_DIM}80  ·  443  ·  22  (system ports below 1024)${C_RESET}"
     echo ""
     [ "$CUSTOM_PORT" = false ] && {
-        prompt "Enter a port number or press ENTER to use $PORT: "
+        prompt "Enter port number or press ENTER for default (5000): "
         read -r input
-        [ -n "$input" ] && [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -gt 1024 ] && [ "$input" -lt 65535 ] && PORT=$input && log_ok "Port set to $PORT"
+        if [ -n "$input" ]; then
+            if [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -gt 1024 ] && [ "$input" -lt 65535 ]; then
+                PORT=$input; log_ok "Port set to $PORT"
+            else
+                log_fail "Invalid port. Must be 1025–65535. Using default 5000."
+                PORT=5000
+            fi
+        else
+            log_ok "Using default port: 5000"
+        fi
     }
     [ "$UNATTENDED" = false ] && wait_key
 }
@@ -484,16 +496,19 @@ summary() {
     echo "  ┌─────────────────────────────────────────────────────────┐"
     echo "  │  HOW TO USE                                             │"
     echo "  │                                                         │"
-    echo "  │  Web app:   http://localhost:$PORT                      │"
+    echo "  │  Web app:   ${C_CYAN}http://localhost:$PORT${C_RESET}                  │"
     echo "  │                                                         │"
     echo "  │  Start:     systemctl --user start dispatch            │"
     echo "  │  Stop:      systemctl --user stop dispatch             │"
     echo "  │  Restart:   systemctl --user restart dispatch          │"
-    echo "  │  Status:    systemctl --user status dispatch           │"
-    echo "  │  Logs:      tail -f $INSTALL_DIR/app.log               │"
+    echo "  │  Status:    systemctl --user status dispatch          │"
+    echo "  │  Logs:      tail -f $INSTALL_DIR/app.log                │"
     echo "  │                                                         │"
     echo "  │  Manual:    cd $INSTALL_DIR && ./start.sh              │"
     echo "  └─────────────────────────────────────────────────────────┘"
+    echo ""
+    echo -e "  ${C_DIM}To change port:  edit ~/.config/systemd/user/dispatch.service${C_RESET}"
+    echo -e "  ${C_DIM}and set Environment=PORT=<new_port>, then:\n                systemctl --user daemon-reload && systemctl --user restart dispatch${C_RESET}"
     echo ""
     echo -e "  ${C_DIM}To uninstall:  systemctl --user stop dispatch && \\"
     echo "                 systemctl --user disable dispatch && \\"
