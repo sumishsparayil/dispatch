@@ -19,7 +19,7 @@ import pandas as pd
 import openpyxl
 
 
-class PantherParser:
+class DispatchParser:
     """
     Reads an Excel workbook and extracts branch-level data for dispatch.
 

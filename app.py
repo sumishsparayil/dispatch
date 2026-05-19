@@ -1,6 +1,6 @@
 """
 Dispatch — Flask Web Application
-KLM Axiva Finvest — MIS Email Dispatch System
+General-purpose MIS Email Dispatch System
 
 Handles all HTTP routes (pages + API) and orchestrates the dispatch pipeline.
 Session state lives in module scope ( cleared on /api/clear ).
@@ -30,10 +30,10 @@ from werkzeug.utils import secure_filename
 import pandas as pd
 import uuid
 
-from core.parser import PantherParser
-from core.engine import PantherEngine
-from core.mailer import PantherMailer
-from core.exporter import PantherExporter
+from core.parser import DispatchParser
+from core.engine import DispatchEngine
+from core.mailer import DispatchMailer
+from core.exporter import DispatchExporter
 from db.database import (
     init_db, get_settings, save_settings_batch, get_password_for_smtp,
     get_run_history, log_run_start, log_run_complete, log_email_result,
@@ -47,7 +47,7 @@ from db.address_book import (
 
 # ── Default from name ──────────────────────────────────────────────────────────
 # Single source of truth. Used when the user has not set a custom from name.
-DEFAULT_FROM_NAME = 'KLM Axiva MIS'
+DEFAULT_FROM_NAME = 'Dispatch MIS'
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -74,7 +74,7 @@ _session = {
 }
 
 # ── Parse progress queue ───────────────────────────────────────────────────────
-# Queue used by PantherParser to emit SSE progress events during Excel parsing.
+# Queue used by DispatchParser to emit SSE progress events during Excel parsing.
 # The background parse thread writes to this queue; the SSE endpoint reads from it.
 _parse_progress_queue = queue.Queue()
 
@@ -91,7 +91,7 @@ _current_parser = [None]
 def _smtp_settings():
     """
     Build the SMTP config dict for the mailer.
-    Reads from panther_data.json (settings store). smtp_pass falls back to
+    Reads from dispatch_data.json (settings store). smtp_pass falls back to
     the OS keyring if not found in JSON.
     """
     s = get_settings()
@@ -163,7 +163,7 @@ def api_upload():
 
     # Spawn background parser
     def background_parse():
-        parser = PantherParser(filepath, progress_callback=_emit_parse_progress)
+        parser = DispatchParser(filepath, progress_callback=_emit_parse_progress)
         _current_parser[0] = parser
         try:
             result = parser.parse()
@@ -197,7 +197,7 @@ def api_upload():
 
 
 def _emit_parse_progress(stage, message, percent):
-    """SSE progress callback registered with PantherParser during parse."""
+    """SSE progress callback registered with DispatchParser during parse."""
     _parse_progress_queue.put({'stage': stage, 'message': message, 'percent': percent})
 
 
@@ -282,7 +282,7 @@ def api_run():
     }
     settings = {**get_settings(), 'branch_mappings': branch_mappings}
 
-    engine = PantherEngine(
+    engine = DispatchEngine(
         branches          = _session['branches'],
         data_df           = _session['data_df'],
         branch_col        = _session['branch_col'],
@@ -312,7 +312,7 @@ def api_progress():
 
     def generate():
         while True:
-            log_entries = PantherEngine.get_log()
+            log_entries = DispatchEngine.get_log()
             if len(log_entries) > last_log_len[0]:
                 for entry in log_entries[last_log_len[0]:]:
                     yield f"data: {json.dumps(entry)}\n\n"
@@ -330,7 +330,7 @@ def api_stop():
     Signal the running engine to stop gracefully.
     The engine checks _stop_flag between each branch and exits the loop.
     """
-    PantherEngine.stop()
+    DispatchEngine.stop()
     return jsonify({'message': 'Stop signalled'})
 
 
@@ -341,7 +341,7 @@ def api_stop():
 @app.route('/api/settings', methods=['GET'])
 def api_settings_get():
     """
-    Return all settings from panther_data.json.
+    Return all settings from dispatch_data.json.
     Omits branch_mappings (never stored here — address_book is the only store).
     """
     settings = get_settings()
@@ -352,7 +352,7 @@ def api_settings_get():
 @app.route('/api/settings', methods=['POST'])
 def api_settings_save():
     """
-    Save one or more settings to panther_data.json.
+    Save one or more settings to dispatch_data.json.
     branch_mappings is silently ignored — address_book is the authoritative store.
     smtp_pass is stored directly (plain text — acceptable for internal tool behind VPN).
     """
@@ -374,7 +374,7 @@ def api_test_smtp():
     data     = request.get_json() or {}
     recipient = data.get('recipient', '') or get_settings().get('smtp_user', '')
     settings = _smtp_settings()
-    mailer   = PantherMailer(settings)
+    mailer   = DispatchMailer(settings)
 
     result = mailer.send_test(to=recipient)
     if result.get('ok'):
@@ -512,7 +512,7 @@ def api_clear():
 
     # Release the parser reference so it can be garbage collected.
     _current_parser[0] = None
-    PantherEngine.clear_log()
+    DispatchEngine.clear_log()
     gc.collect()
 
     return jsonify({'message': 'Session cleared'})

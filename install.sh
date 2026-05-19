@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # Dispatch — Professional TUI Installer
-# KLM Axiva Finvest — MIS Email Dispatch System
+# Dispatch — MIS Email Dispatch System
 # =============================================================================
 # Run interactively:  ./install.sh
 # Run unattended:     ./install.sh --unattended [--port NNNN] [--dir PATH]
@@ -12,7 +12,7 @@ set -e
 # ── Identity ─────────────────────────────────────────────────────────────────────
 APP_NAME="Dispatch"
 APP_FULL="Dispatch MIS"
-ORG="KLM Axiva Finvest"
+ORG="Dispatch MIS"
 VERSION="1.0.0"
 REPO="https://github.com/sumishsparayil/dispatch.git"
 
@@ -78,7 +78,7 @@ banner() {
     echo "   ██║     ██║  ██║███████║██║     ╚██████╔╝██║ ╚═╝ ██║███████╗"
     echo "   ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝      ╚═════╝ ╚═╝     ╚═╝╚══════╝"
     echo -e "${C_RESET}"
-    echo -e "  ${C_BOLD}${C_MAGENTA}KLM Axiva Finvest${C_RESET}  ·  ${C_WHITE}MIS Email Dispatch System${C_RESET}"
+    echo -e "  ${C_BOLD}${C_MAGENTA}Dispatch MIS${C_RESET}  ·  ${C_WHITE}MIS Email Dispatch System${C_RESET}"
     echo -e "  ${C_DIM}Version $VERSION  ·  Professional Installer${C_RESET}"
     echo ""
 }
@@ -239,7 +239,7 @@ create_service() {
     mkdir -p "$REAL_HOME/.config/systemd/user"
     cat > "$REAL_HOME/.config/systemd/user/dispatch.service" << EOF
 [Unit]
-Description=Dispatch MIS Email System — KLM Axiva Finvest
+Description=Dispatch MIS Email System
 Documentation=https://github.com/sumishsparayil/dispatch
 After=network-online.target
 Wants=network-online.target

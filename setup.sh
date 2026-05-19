@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # Dispatch — One-Line Setup
-# KLM Axiva Finvest — MIS Email Dispatch System
+# Dispatch — MIS Email Dispatch System
 # =============================================================================
 # Usage: curl -sSL https://raw.githubusercontent.com/sumishsparayil/dispatch/main/setup.sh | bash
 #
@@ -30,7 +30,7 @@ echo "   ██╔═══╝ ██╔══██╗╚════██║�
 echo "   ██║     ██║  ██║███████║██║     ╚██████╔╝██║ ╚═╝ ██║███████╗"
 echo "   ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝      ╚═════╝ ╚═╝     ╚═╝╚══════╝"
 echo -e "${RESET}"
-echo -e "  ${BOLD}KLM Axiva Finvest — MIS Email Dispatch System${RESET}"
+echo -e "  ${BOLD}Dispatch MIS — Email Dispatch System${RESET}"
 echo -e "  ${CYAN}https://github.com/sumishsparayil/dispatch${RESET}"
 echo ""
 
@@ -135,7 +135,7 @@ log "Installing systemd service..."
 mkdir -p "$REAL_HOME/.config/systemd/user"
 cat > "$REAL_HOME/.config/systemd/user/dispatch.service" << EOF
 [Unit]
-Description=Dispatch MIS Email System — KLM Axiva Finvest
+Description=Dispatch MIS Email System
 After=network.target
 
 [Service]

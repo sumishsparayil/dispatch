@@ -18,7 +18,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
 
-class PantherMailer:
+class DispatchMailer:
     """
     SMTP mailer for Dispatch.
 
@@ -34,7 +34,7 @@ class PantherMailer:
         self.port = int(settings.get('smtp_port') or 587)
         self.user = settings.get('smtp_user', '')
         self.password = settings.get('smtp_pass', '')
-        self.from_name = settings.get('from_name', 'KLM Axiva MIS')
+        self.from_name = settings.get('from_name', 'Dispatch MIS')
         self.use_tls = settings.get('use_tls', True)
 
     def send(

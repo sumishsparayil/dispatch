@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings — KLM Axiva MIS</title>
+  <title>Settings — Dispatch MIS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
@@ -12,11 +12,11 @@
 
 <header class="app-header">
   <div class="logo">
-    <img src="/static/logo.png" alt="KLM Axiva Finvest" class="logo-img"
+    <img src="/static/logo.png" alt="Dispatch MIS" class="logo-img"
          onerror="this.style.display='none'">
     <div class="logo-text">
-      <div class="logo-name">KLM AXIVA</div>
-      <div class="logo-sub">MIS Dispatch — KLM Axiva Finvest</div>
+      <div class="logo-name">DISPATCH</div>
+      <div class="logo-sub">MIS Email Dispatch</div>
     </div>
   </div>
   <nav>
@@ -42,7 +42,7 @@
           <div class="form-group">
             <label class="form-label">SMTP Host</label>
             <input type="text" class="form-input" id="smtp_host"
-                   placeholder="smtp.klmaxiva.com">
+                   placeholder="smtp.example.com">
           </div>
           <div class="form-group">
             <label class="form-label">SMTP Port</label>
@@ -54,7 +54,7 @@
           <div class="form-group">
             <label class="form-label">Username (Email)</label>
             <input type="text" class="form-input" id="smtp_user"
-                   placeholder="mis@klmaxiva.com">
+                   placeholder="your-email@example.com">
           </div>
           <div class="form-group">
             <label class="form-label">Password</label>
@@ -70,7 +70,7 @@
         <div class="form-group">
           <label class="form-label">From Name</label>
           <input type="text" class="form-input" id="from_name"
-                 placeholder="MIS - KLM Axiva Finvest">
+                 placeholder="MIS - Your Company Name">
         </div>
         <div class="toggle-row" style="margin-top:20px;">
           <label class="toggle">
@@ -161,13 +161,13 @@
       <div class="form-group">
         <label class="form-label">Email Body</label>
         <textarea class="form-textarea" id="email_body" rows="8"
-                  placeholder="Dear Team,&#10;&#10;Please find attached the MIS report for {branch}.&#10;&#10;Summary:&#10;  Total Rows: {row_count}&#10;  Total Outstanding: Rs.{total_outstanding}&#10;&#10;Regards,&#10;MIS Team — KLM Axiva Finvest"></textarea>
+                  placeholder="Dear Team,&#10;&#10;Please find attached the MIS report for {branch}.&#10;&#10;Summary:&#10;  Total Rows: {row_count}&#10;  Total Outstanding: Rs.{total_outstanding}&#10;&#10;Regards,&#10;MIS Team"></textarea>
       </div>
 
       <div class="form-group" style="margin-bottom:0;">
         <label class="form-label">Default CC</label>
         <input type="text" class="form-input" id="default_cc"
-               placeholder="manager@klmaxiva.com, head@klmaxiva.com">
+               placeholder="manager@example.com, head@example.com">
         <span class="form-hint">Comma-separated list for the Address Book CC field. Leave blank for no CC. (Note: per-branch CC from Address Book is used; default_cc is not applied automatically.)</span>
       </div>
 
@@ -486,7 +486,7 @@ async function loadSettings() {
     document.getElementById('smtp_port').value       = data.smtp_port || '587';
     document.getElementById('smtp_user').value       = data.smtp_user || '';
     document.getElementById('smtp_pass').value       = '';
-    document.getElementById('from_name').value       = data.from_name || 'KLM Axiva MIS';
+    document.getElementById('from_name').value       = data.from_name || 'Dispatch MIS';
     document.getElementById('use_tls').checked       = data.use_tls !== false;
     document.getElementById('auto_delete').checked  = data.auto_delete !== false;
     document.getElementById('email_subject').value   = data.email_subject || '';

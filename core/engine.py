@@ -23,8 +23,8 @@ from datetime import datetime
 
 import pandas as pd
 
-from core.exporter import PantherExporter
-from core.mailer import PantherMailer
+from core.exporter import DispatchExporter
+from core.mailer import DispatchMailer
 from db.database import log_run_start, log_run_complete, log_email_result
 
 
@@ -39,10 +39,10 @@ _stop_flag = False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PantherEngine
+# DispatchEngine
 # ══════════════════════════════════════════════════════════════════════════════
 
-class PantherEngine:
+class DispatchEngine:
     """
     Runs email dispatch in a background thread after start() is called.
 
@@ -151,7 +151,7 @@ class PantherEngine:
         branch_mappings = self.settings.get('branch_mappings', {})
         email_subject_template = self.settings.get('email_subject', '')
         email_body_template = self.settings.get('email_body', '')
-        from_name = self.settings.get('from_name', 'KLM Axiva MIS')
+        from_name = self.settings.get('from_name', 'Dispatch MIS')
         use_tls = self.settings.get('use_tls', True)
 
         # Build target list: only branches with a valid email address.
@@ -197,8 +197,8 @@ class PantherEngine:
             'from_name': from_name,
             'use_tls': use_tls,
         }
-        mailer = PantherMailer(smtp_settings)
-        exporter = PantherExporter()
+        mailer = DispatchMailer(smtp_settings)
+        exporter = DispatchExporter()
 
         sent = 0
         failed = 0

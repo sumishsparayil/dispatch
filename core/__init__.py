@@ -1,5 +1,5 @@
-# Panther — Core modules
-from .parser import PantherParser
-from .engine import PantherEngine
-from .mailer import PantherMailer
-from .exporter import PantherExporter
+# Dispatch — Core modules
+from .parser import DispatchParser
+from .engine import DispatchEngine
+from .mailer import DispatchMailer
+from .exporter import DispatchExporter

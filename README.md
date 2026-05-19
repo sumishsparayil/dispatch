@@ -1,13 +1,13 @@
-# Dispatch MIS — KLM Axiva Finvest
+# Dispatch MIS
 
-**Dispatch** automates personalised branch-wise email dispatch for KLM Axiva Finvest. Upload an Excel file, Dispatch detects branches, generates a filtered spreadsheet per branch, and sends it via SMTP — all with real-time progress tracking and full run history.
+**Dispatch** automates personalised branch-wise email dispatch for any company. Upload an Excel file, Dispatch detects branches, generates a filtered spreadsheet per branch, and sends it via SMTP — all with real-time progress tracking and full run history.
 
 ---
 
 ## Overview
 
 - **What it does:** Sends customised branch-specific MIS reports via email, with per-branch Excel attachments
-- **Who uses it:** KLM Axiva Finvest operations team
+- **Who uses it:** your company operations team
 - **Stack:** Flask · pandas · openpyxl · SMTP TLS
 - **Deployment:** Single-command install → runs as a local web app, survives reboots
 
@@ -36,7 +36,7 @@ Gmail example:
 - Port: `587`
 - Username: `your-email@gmail.com`
 - Password: Your [Google App Password](https://support.google.com/accounts/answer/185833) (enable 2FA → App Passwords)
-- From name: `KLM Axiva MIS`
+- From name: `Dispatch MIS`
 
 ### 2. Import Branch Emails
 
@@ -185,4 +185,4 @@ dispatch/
 
 ---
 
-*Dispatch MIS — KLM Axiva Finvest. Internal use only.*
+*Dispatch MIS. For any company. Use freely.*
