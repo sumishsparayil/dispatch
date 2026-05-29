@@ -3,11 +3,12 @@
 # Dispatch — One-Line Setup
 # Dispatch — MIS Email Dispatch System
 # =============================================================================
-# Usage: curl -sSL https://raw.githubusercontent.com/sumishsparayil/dispatch/main/setup.sh | bash
+# Usage:
+#   curl -sSL https://raw.githubusercontent.com/sumishsparayil/dispatch/main/setup.sh | bash
 #
 # Options (env vars):
-#   DISPATCH_DIR=~/Dispatch    # install location
-#   DISPATCH_PORT=5000         # port
+#   DISPATCH_DIR=~/Dispatch     # install location
+#   DISPATCH_PORT=5000          # port number
 # =============================================================================
 set -e
 
@@ -33,6 +34,13 @@ echo -e "${RESET}"
 echo -e "  ${BOLD}Dispatch MIS — Email Dispatch System${RESET}"
 echo -e "  ${CYAN}https://github.com/sumishsparayil/dispatch${RESET}"
 echo ""
+
+# ── Validate port ─────────────────────────────────────────────────────────────
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
+    err "Port must be a number between 1024 and 65535."
+    exit 1
+fi
+log "Installing on port $PORT"
 
 # ── Python detection ───────────────────────────────────────────────────────────
 PYTHON_CMD=""; PYTHON_VER=""
@@ -104,10 +112,10 @@ ok "Virtual environment ready"
 PIP="$INSTALL_DIR/.venv/bin/pip"
 log "Installing Python packages..."
 $PIP install --upgrade pip -q 2>/dev/null
-INSTALL_LOG=$($PIP install -r requirements.txt 2>&1) || true
+INSTALL_LOG=$($PIP install -r requirements-windows.txt 2>&1) || true
 $PIP show flask &>/dev/null && ok "Python packages installed" || {
     warn "Some packages may have issues. Run manually to check:"
-    echo "  cd $INSTALL_DIR && .venv/bin/pip install -r requirements.txt"
+    echo "  cd $INSTALL_DIR && .venv/bin/pip install -r requirements-windows.txt"
 }
 
 # ── Launcher scripts ───────────────────────────────────────────────────────────
@@ -115,8 +123,9 @@ cat > "$INSTALL_DIR/start.sh" << 'SCRIPT'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+PORT="${PORT:-5000}"
 source .venv/bin/activate
-exec .venv/bin/python app.py
+exec .venv/bin/python app.py --port "$PORT"
 SCRIPT
 chmod +x "$INSTALL_DIR/start.sh"
 ok "Created: start.sh"
@@ -130,7 +139,7 @@ SCRIPT
 chmod +x "$INSTALL_DIR/dispatch.sh"
 ok "Created: dispatch.sh"
 
-# ── Systemd service ────────────────────────────────────────────────────────────
+# ── Systemd service ───────────────────────────────────────────────────────────
 log "Installing systemd service..."
 mkdir -p "$REAL_HOME/.config/systemd/user"
 cat > "$REAL_HOME/.config/systemd/user/dispatch.service" << EOF
@@ -141,7 +150,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/app.py
+ExecStart=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/app.py --port $PORT
 Restart=on-failure
 RestartSec=10
 Environment=PORT=$PORT
@@ -163,7 +172,7 @@ ok "Systemd service installed and enabled"
 # ── Start ─────────────────────────────────────────────────────────────────────
 log "Starting Dispatch on port $PORT..."
 if ! systemctl --user start dispatch.service 2>/dev/null; then
-    nohup "$INSTALL_DIR/start.sh" > "$INSTALL_DIR/app.log" 2>&1 &
+    PORT=$PORT nohup "$INSTALL_DIR/start.sh" > "$INSTALL_DIR/app.log" 2>&1 &
 fi
 sleep 3
 
