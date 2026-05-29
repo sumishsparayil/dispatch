@@ -218,7 +218,7 @@ create_scripts() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 source .venv/bin/activate
-exec .venv/bin/python app.py
+exec .venv/bin/python app.py --port $PORT
 SCRIPT
     chmod +x "$INSTALL_DIR/start.sh"
     log_ok "Created: start.sh"
@@ -247,7 +247,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/app.py
+ExecStart=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/app.py --port $PORT
 Restart=on-failure
 RestartSec=10
 Environment=PORT=$PORT
